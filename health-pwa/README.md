@@ -1,0 +1,32 @@
+# 健康记录 PWA
+
+这是从 `日常热量_运动_体重记录模板.xlsx` 拆出来的轻量 PWA。它可以离线使用，默认把数据保存在当前浏览器；如果配置 Supabase，也可以跨设备同步。
+
+食品库支持新增自定义食品。每日记录页保留常用固定项，也可以在“其他食物”里添加任意食品库条目。
+
+运动库支持新增自定义运动。每日记录页保留跑步、走路、力量、波比、羽毛球，也可以在“其他运动”里添加徒步、游泳等项目；默认按 MET 估算，也可以直接手填 kcal。
+
+## 本地运行
+
+在 `health-pwa` 目录启动任意静态服务器即可，例如：
+
+```powershell
+python -m http.server 4173
+```
+
+然后打开：
+
+```text
+http://localhost:4173
+```
+
+## 云同步
+
+1. 创建一个 Supabase 项目。
+2. 在 Supabase SQL Editor 运行 `supabase-schema.sql`。
+3. 在应用的“设置”页填入 Supabase URL、Anon Key、邮箱和密码。
+4. 注册/登录后使用“上传”和“拉取”同步。
+
+## 部署
+
+这个目录是纯静态站点，可直接部署到 Vercel、Cloudflare Pages、Netlify 或 GitHub Pages。部署根目录选择 `health-pwa`。
