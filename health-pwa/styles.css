@@ -139,6 +139,17 @@ button {
   transform: translateY(1px);
 }
 
+.icon-button:disabled,
+.nav-button:disabled,
+.text-button:disabled,
+.primary-button:disabled,
+.danger-button:disabled,
+.ghost-button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+  transform: none;
+}
+
 .icon-button {
   width: 42px;
   display: grid;
@@ -600,6 +611,75 @@ button {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+
+.add-food-actions {
+  justify-content: flex-end;
+}
+
+.lookup-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.lookup-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.lookup-header strong {
+  color: var(--text);
+  font-size: 0.96rem;
+}
+
+.lookup-results {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lookup-result {
+  width: 100%;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lookup-result:hover {
+  border-color: rgba(47, 125, 98, 0.45);
+  background: var(--surface-2);
+}
+
+.lookup-title {
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.lookup-meta,
+.lookup-macros {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.lookup-macros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
 }
 
 .status-pill {
