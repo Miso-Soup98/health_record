@@ -9,6 +9,7 @@
 - `日常热量_运动_体重记录模板.xlsx`：原始 Excel 模板，包含 Dashboard、每日记录、体重记录、食品库和周汇总。
 - `health-pwa/`：轻量 PWA 应用，可以本地运行，也可以部署为静态网站。
 - `health-pwa/supabase-schema.sql`：可选 Supabase 云同步表结构。
+- `health_record_backup_2026-06-05.zip`：当前本地项目的完整备份包，包含 Excel、PWA 项目和说明文档。
 
 ## 已实现功能
 
@@ -42,4 +43,4 @@ http://localhost:4173
 
 ## 隐私提醒
 
-本项目可能包含个人健康、饮食、运动和体重数据。如果仓库设为 public，这些内容会对互联网公开。
+本项目可能包含个人健康、饮食、运动和体重数据。当前仓库是 public，这些内容会对互联网公开。
