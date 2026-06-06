@@ -670,10 +670,15 @@ button {
 }
 
 .lookup-meta,
+.lookup-note,
 .lookup-macros {
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.45;
+}
+
+.lookup-note {
+  color: var(--warn);
 }
 
 .lookup-macros {

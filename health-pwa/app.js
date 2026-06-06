@@ -53,12 +53,21 @@ const FOOD_QUERY_ALIASES = [
   { terms: ["土豆", "马铃薯"], query: "potato raw" },
   { terms: ["红薯", "地瓜", "番薯"], query: "sweet potato raw" },
   { terms: ["胡萝卜"], query: "carrot raw" },
+  { terms: ["玉米"], query: "corn cooked" },
+  { terms: ["洋葱"], query: "onion raw" },
+  { terms: ["菠菜"], query: "spinach raw" },
+  { terms: ["南瓜"], query: "pumpkin raw" },
   { terms: ["西兰花", "花椰菜"], query: "broccoli raw" },
   { terms: ["白菜", "大白菜"], query: "napa cabbage raw" },
   { terms: ["生菜"], query: "lettuce raw" },
   { terms: ["蘑菇", "香菇", "口蘑"], query: "mushroom raw" },
   { terms: ["苹果"], query: "apple raw" },
   { terms: ["香蕉"], query: "banana raw" },
+  { terms: ["橙子", "橘子"], query: "orange raw" },
+  { terms: ["草莓"], query: "strawberry raw" },
+  { terms: ["蓝莓"], query: "blueberry raw" },
+  { terms: ["葡萄"], query: "grape raw" },
+  { terms: ["牛油果", "鳄梨"], query: "avocado raw" },
   { terms: ["鸡胸", "鸡胸肉"], query: "chicken breast raw" },
   { terms: ["鸡腿", "鸡腿肉"], query: "chicken thigh raw" },
   { terms: ["牛肉", "瘦牛肉"], query: "beef lean raw" },
@@ -66,6 +75,9 @@ const FOOD_QUERY_ALIASES = [
   { terms: ["羊肉"], query: "lamb raw" },
   { terms: ["鸡蛋", "蛋"], query: "egg whole raw" },
   { terms: ["米饭", "白米饭"], query: "rice cooked" },
+  { terms: ["乌冬", "乌冬面"], query: "udon noodles cooked" },
+  { terms: ["荞麦面"], query: "soba noodles cooked" },
+  { terms: ["意面", "意大利面"], query: "pasta cooked" },
   { terms: ["燕麦", "燕麦片"], query: "oats" },
   { terms: ["酸奶", "无糖酸奶"], query: "plain yogurt" },
   { terms: ["牛奶"], query: "milk" },
@@ -76,6 +88,44 @@ const FOOD_QUERY_ALIASES = [
   { terms: ["饭团"], query: "onigiri" },
 ];
 
+const FOOD_QUERY_TRANSLATIONS = [
+  ["乐事", "lays"],
+  ["卡乐比", "calbee"],
+  ["格力高", "glico"],
+  ["百奇", "pocky"],
+  ["奥利奥", "oreo"],
+  ["明治", "meiji"],
+  ["森永", "morinaga"],
+  ["日清", "nissin"],
+  ["黄瓜味", "cucumber flavor"],
+  ["烧烤味", "barbecue flavor"],
+  ["原味", "original flavor"],
+  ["海苔味", "seaweed flavor"],
+  ["番茄味", "tomato flavor"],
+  ["薯片", "potato chips"],
+  ["薯条", "french fries"],
+  ["虾条", "shrimp chips"],
+  ["饼干", "biscuits"],
+  ["曲奇", "cookies"],
+  ["巧克力", "chocolate"],
+  ["糖果", "candy"],
+  ["软糖", "gummy candy"],
+  ["果冻", "jelly"],
+  ["冰淇淋", "ice cream"],
+  ["雪糕", "ice cream bar"],
+  ["蛋糕", "cake"],
+  ["面包", "bread"],
+  ["泡面", "instant noodles"],
+  ["方便面", "instant noodles"],
+  ["拉面", "ramen"],
+  ["饭团", "onigiri"],
+  ["便当", "bento"],
+  ["三明治", "sandwich"],
+  ["可乐", "cola"],
+  ["奶茶", "milk tea"],
+  ["果汁", "juice"],
+];
+
 const LOCAL_FOOD_NUTRITION = [
   { terms: ["西红柿", "番茄"], displayName: "西红柿/番茄，生", category: "蔬菜", kcal: 18, protein: 0.9, fat: 0.2, carb: 3.9 },
   { terms: ["圣女果", "小番茄"], displayName: "圣女果/小番茄，生", category: "蔬菜", kcal: 27, protein: 0.8, fat: 0.6, carb: 5.5 },
@@ -83,11 +133,20 @@ const LOCAL_FOOD_NUTRITION = [
   { terms: ["土豆", "马铃薯"], displayName: "土豆，生", category: "蔬菜", kcal: 77, protein: 2, fat: 0.1, carb: 17.5 },
   { terms: ["红薯", "地瓜", "番薯"], displayName: "红薯，生", category: "主食/谷物", kcal: 86, protein: 1.6, fat: 0.1, carb: 20.1 },
   { terms: ["胡萝卜"], displayName: "胡萝卜，生", category: "蔬菜", kcal: 41, protein: 0.9, fat: 0.2, carb: 9.6 },
+  { terms: ["玉米"], displayName: "玉米，熟", category: "主食/谷物", kcal: 96, protein: 3.4, fat: 1.5, carb: 21 },
+  { terms: ["洋葱"], displayName: "洋葱，生", category: "蔬菜", kcal: 40, protein: 1.1, fat: 0.1, carb: 9.3 },
+  { terms: ["菠菜"], displayName: "菠菜，生", category: "蔬菜", kcal: 23, protein: 2.9, fat: 0.4, carb: 3.6 },
+  { terms: ["南瓜"], displayName: "南瓜，生", category: "蔬菜", kcal: 26, protein: 1, fat: 0.1, carb: 6.5 },
   { terms: ["西兰花", "花椰菜"], displayName: "西兰花，生", category: "蔬菜", kcal: 34, protein: 2.8, fat: 0.4, carb: 6.6 },
   { terms: ["白菜", "大白菜"], displayName: "大白菜，生", category: "蔬菜", kcal: 16, protein: 1.2, fat: 0.2, carb: 3.2 },
   { terms: ["蘑菇", "香菇", "口蘑"], displayName: "蘑菇，生", category: "蔬菜", kcal: 22, protein: 3.1, fat: 0.3, carb: 3.3 },
   { terms: ["苹果"], displayName: "苹果，生", category: "水果/碳水", kcal: 52, protein: 0.3, fat: 0.2, carb: 13.8 },
   { terms: ["香蕉"], displayName: "香蕉，生", category: "水果/碳水", kcal: 89, protein: 1.1, fat: 0.3, carb: 22.8 },
+  { terms: ["橙子", "橘子"], displayName: "橙子，生", category: "水果/碳水", kcal: 47, protein: 0.9, fat: 0.1, carb: 11.8 },
+  { terms: ["草莓"], displayName: "草莓，生", category: "水果/碳水", kcal: 32, protein: 0.7, fat: 0.3, carb: 7.7 },
+  { terms: ["蓝莓"], displayName: "蓝莓，生", category: "水果/碳水", kcal: 57, protein: 0.7, fat: 0.3, carb: 14.5 },
+  { terms: ["葡萄"], displayName: "葡萄，生", category: "水果/碳水", kcal: 69, protein: 0.7, fat: 0.2, carb: 18.1 },
+  { terms: ["牛油果", "鳄梨"], displayName: "牛油果/鳄梨，生", category: "水果/碳水", kcal: 160, protein: 2, fat: 14.7, carb: 8.5 },
   { terms: ["鸡胸", "鸡胸肉"], displayName: "鸡胸肉，生", category: "肉类", kcal: 120, protein: 23, fat: 2.5, carb: 0 },
   { terms: ["鸡腿", "鸡腿肉"], displayName: "鸡腿肉，生", category: "肉类", kcal: 180, protein: 18, fat: 12, carb: 0 },
   { terms: ["瘦牛肉", "牛肉"], displayName: "瘦牛肉，生", category: "肉类", kcal: 220, protein: 20, fat: 15, carb: 0 },
@@ -95,6 +154,9 @@ const LOCAL_FOOD_NUTRITION = [
   { terms: ["羊肉"], displayName: "羊肉，生", category: "肉类", kcal: 230, protein: 18, fat: 17, carb: 0 },
   { terms: ["鸡蛋", "蛋"], displayName: "鸡蛋", category: "蛋白/脂肪", kcal: 143, protein: 12.6, fat: 9.5, carb: 0.7 },
   { terms: ["米饭", "白米饭"], displayName: "白米饭，熟", category: "主食/谷物", kcal: 116, protein: 2.6, fat: 0.3, carb: 25.9 },
+  { terms: ["乌冬", "乌冬面"], displayName: "乌冬面，熟", category: "主食/谷物", kcal: 105, protein: 2.6, fat: 0.4, carb: 21.3 },
+  { terms: ["荞麦面"], displayName: "荞麦面，熟", category: "主食/谷物", kcal: 99, protein: 5.1, fat: 0.1, carb: 21.4 },
+  { terms: ["意面", "意大利面"], displayName: "意大利面，熟", category: "主食/谷物", kcal: 158, protein: 5.8, fat: 0.9, carb: 30.9 },
   { terms: ["燕麦", "燕麦片"], displayName: "燕麦片", category: "主食/谷物", kcal: 370, protein: 13.2, fat: 6.5, carb: 67.7 },
   { terms: ["酸奶", "无糖酸奶"], displayName: "无糖酸奶", category: "乳制品", kcal: 61, protein: 3.5, fat: 3.3, carb: 4.7 },
   { terms: ["牛奶"], displayName: "牛奶", category: "乳制品", kcal: 61, protein: 3.2, fat: 3.3, carb: 4.8 },
@@ -103,6 +165,38 @@ const LOCAL_FOOD_NUTRITION = [
   { terms: ["三文鱼", "鲑鱼"], displayName: "三文鱼，生", category: "肉类", kcal: 208, protein: 20.4, fat: 13.4, carb: 0 },
   { terms: ["金枪鱼"], displayName: "金枪鱼，生", category: "肉类", kcal: 109, protein: 24.4, fat: 0.5, carb: 0 },
 ];
+
+const PACKAGED_FOOD_ESTIMATES = [
+  { terms: ["薯片", "薯条", "虾条", "膨化", "乐事", "卡乐比", "lays", "calbee", "potato chips", "ポテトチップス"], displayName: "薯片/膨化零食估算", category: "零食", kcal: 540, protein: 6, fat: 34, carb: 52 },
+  { terms: ["饼干", "曲奇", "奥利奥", "oreo", "cookie", "biscuit", "クッキー", "ビスケット"], displayName: "饼干/曲奇估算", category: "零食", kcal: 480, protein: 6, fat: 20, carb: 70 },
+  { terms: ["巧克力", "可可", "明治", "meiji", "kitkat", "chocolate", "チョコ"], displayName: "巧克力估算", category: "零食", kcal: 540, protein: 7, fat: 32, carb: 56 },
+  { terms: ["百奇", "pocky", "格力高", "glico"], displayName: "巧克力饼干棒估算", category: "零食", kcal: 500, protein: 7, fat: 24, carb: 64 },
+  { terms: ["糖果", "软糖", "硬糖", "gummy", "candy", "グミ", "キャンディ"], displayName: "糖果/软糖估算", category: "零食", kcal: 390, protein: 0, fat: 0.2, carb: 96 },
+  { terms: ["果冻", "布丁", "jelly", "pudding", "ゼリー", "プリン"], displayName: "果冻/布丁估算", category: "零食", kcal: 120, protein: 2, fat: 2, carb: 24 },
+  { terms: ["冰淇淋", "雪糕", "冰激凌", "ice cream", "アイス"], displayName: "冰淇淋/雪糕估算", category: "零食", kcal: 210, protein: 3.5, fat: 11, carb: 24 },
+  { terms: ["蛋糕", "泡芙", "甜甜圈", "cake", "donut", "ケーキ", "ドーナツ"], displayName: "蛋糕/甜点估算", category: "零食", kcal: 360, protein: 5, fat: 18, carb: 45 },
+  { terms: ["坚果", "花生", "杏仁", "腰果", "瓜子", "nuts", "peanut", "almond", "cashew"], displayName: "坚果零食估算", category: "零食", kcal: 600, protein: 20, fat: 50, carb: 20 },
+  { terms: ["泡面", "方便面", "杯面", "日清", "nissin", "instant noodles", "cup noodles", "ラーメン", "カップヌードル"], displayName: "方便面/杯面估算", category: "主食/谷物", kcal: 450, protein: 9, fat: 18, carb: 62 },
+  { terms: ["面包", "吐司", "可颂", "菓子パン", "bread", "toast", "croissant", "パン"], displayName: "面包/烘焙估算", category: "主食/谷物", kcal: 280, protein: 8, fat: 6, carb: 50 },
+  { terms: ["饭团", "おにぎり", "onigiri"], displayName: "饭团估算", category: "主食/谷物", kcal: 180, protein: 4, fat: 2, carb: 37 },
+  { terms: ["便当", "弁当", "盒饭", "bento"], displayName: "便当估算", category: "主食/谷物", kcal: 180, protein: 7, fat: 6, carb: 25 },
+  { terms: ["三明治", "sandwich", "サンド"], displayName: "三明治估算", category: "主食/谷物", kcal: 240, protein: 9, fat: 9, carb: 30 },
+  { terms: ["可乐", "汽水", "碳酸饮料", "cola", "soda", "ソーダ"], displayName: "含糖汽水估算", category: "饮料", unitLabel: "ml", kcal: 42, protein: 0, fat: 0, carb: 10.6 },
+  { terms: ["奶茶", "milk tea", "ミルクティー"], displayName: "奶茶估算", category: "饮料", unitLabel: "ml", kcal: 55, protein: 1, fat: 1.5, carb: 9.5 },
+  { terms: ["果汁", "juice", "ジュース"], displayName: "果汁估算", category: "饮料", unitLabel: "ml", kcal: 45, protein: 0.3, fat: 0.1, carb: 10.5 },
+  { terms: ["拿铁", "咖啡牛奶", "latte", "カフェラテ"], displayName: "拿铁/咖啡牛奶估算", category: "饮料", unitLabel: "ml", kcal: 45, protein: 2.5, fat: 1.8, carb: 4.8 },
+  { terms: ["蛋白棒", "protein bar"], displayName: "蛋白棒估算", category: "零食", kcal: 360, protein: 22, fat: 12, carb: 42 },
+];
+
+const GENERIC_PACKAGED_ESTIMATE = {
+  displayName: "未识别成品估算",
+  category: "其他",
+  kcal: 300,
+  protein: 6,
+  fat: 12,
+  carb: 42,
+  confidence: "low",
+};
 
 const app = document.getElementById("app");
 const toastEl = document.getElementById("toast");
@@ -1179,7 +1273,7 @@ function renderFoodLookupPanel() {
     return `
       <div class="lookup-panel">
         <div class="lookup-header">
-          <strong>正在查询</strong>
+          <strong>正在补全</strong>
           <span>${escapeHTML(foodLookupState.query)}</span>
         </div>
       </div>
@@ -1209,10 +1303,13 @@ function renderFoodLookupPanel() {
 }
 
 function renderFoodLookupResult(result, index) {
+  const note = result.note ? `<span class="lookup-note">${escapeHTML(result.note)}</span>` : "";
+  const basis = `每 ${fmt(result.baseAmount || 100)}${result.unitLabel || "g"}`;
   return `
     <button type="button" class="lookup-result" data-fill-food="${index}">
       <span class="lookup-title">${escapeHTML(result.displayName)}</span>
-      <span class="lookup-meta">${escapeHTML(result.sourceLabel)} · ${escapeHTML(result.category || "其他")} · 每 100g</span>
+      <span class="lookup-meta">${escapeHTML(result.sourceLabel)} · ${escapeHTML(result.category || "其他")} · ${escapeHTML(basis)}</span>
+      ${note}
       <span class="lookup-macros">
         ${fmt(result.kcal)} kcal
         <span>蛋白 ${fmt(result.protein, 1)}g</span>
@@ -1234,9 +1331,19 @@ function foodAliasForName(name) {
   return FOOD_QUERY_ALIASES.find((item) => item.terms.some((term) => text.includes(term.toLowerCase()) || term.toLowerCase().includes(text)));
 }
 
+function translatedFoodQuery(name) {
+  const text = normalizeLookupText(name);
+  const tokens = [];
+  FOOD_QUERY_TRANSLATIONS.forEach(([term, translation]) => {
+    if (text.includes(term.toLowerCase())) tokens.push(translation);
+  });
+  return [...new Set(tokens)].join(" ");
+}
+
 function buildFoodSearchQueries(name) {
   const alias = foodAliasForName(name);
-  const queries = [alias?.query, name].filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+  const translated = translatedFoodQuery(name);
+  const queries = [alias?.query, translated, name].filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
   return [...new Set(queries)];
 }
 
@@ -1274,6 +1381,7 @@ function lookupResultScore(item) {
   const name = item.displayName.toLowerCase();
   let score = 0;
   if (item.source === "local") score += 6;
+  if (item.source === "estimate") score += item.confidence === "low" ? -8 : 5;
   if (/tomatoes, red, ripe, raw|tomatoes, raw/.test(name)) score += 8;
   if (/\braw\b|生/.test(name)) score += 4;
   if (/foundation/i.test(item.sourceType)) score += 3;
@@ -1282,6 +1390,27 @@ function lookupResultScore(item) {
   if (/grape|cherry|green|orange|yellow/.test(name)) score -= 2;
   if (/sauce|soup|powder|dried|fried|canned|sweetened|加糖|酱|汤|粉|油炸/.test(name)) score -= 3;
   return score;
+}
+
+function resetFoodLookupState() {
+  foodLookupState = {
+    status: "idle",
+    query: "",
+    message: "",
+    results: [],
+    formDraft: null,
+  };
+}
+
+function showFoodLookupCandidates(name, results, form, message) {
+  foodLookupState = {
+    status: results.length ? "ready" : "empty",
+    query: name,
+    message: message || (results.length ? `找到 ${results.length} 个候选，点击一条填入表单` : "可以换个更具体的名字，或手动填写营养数据"),
+    results,
+    formDraft: readAddFoodFormDraft(form),
+  };
+  render();
 }
 
 function dedupeFoodLookupResults(results) {
@@ -1294,7 +1423,7 @@ function dedupeFoodLookupResults(results) {
   });
 }
 
-async function fetchJSONWithTimeout(url, options = {}, timeoutMs = 9000) {
+async function fetchJSONWithTimeout(url, options = {}, timeoutMs = 4500) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -1373,6 +1502,25 @@ async function searchOpenFoodFacts(query) {
 
 function searchLocalFoods(name) {
   const text = normalizeLookupText(name);
+  const packagedMatches = PACKAGED_FOOD_ESTIMATES.filter((item) => item.terms.some((term) => text.includes(term.toLowerCase()))).map((item) => ({
+    source: "estimate",
+    sourceId: `estimate:${item.terms[0]}`,
+    sourceType: "关键词估算",
+    sourceLabel: "关键词估算",
+    displayName: item.displayName,
+    category: item.category,
+    baseAmount: item.baseAmount || 100,
+    unitLabel: item.unitLabel || "g",
+    kcal: item.kcal,
+    protein: item.protein,
+    fat: item.fat,
+    carb: item.carb,
+    confidence: item.confidence || "medium",
+    note: item.note || "估算值，不同品牌差异较大，建议按包装营养表校正",
+  }));
+
+  if (packagedMatches.length) return packagedMatches;
+
   return LOCAL_FOOD_NUTRITION.filter((item) => item.terms.some((term) => text.includes(term.toLowerCase()) || term.toLowerCase().includes(text))).map((item) => ({
     source: "local",
     sourceId: `local:${item.terms[0]}`,
@@ -1386,7 +1534,27 @@ function searchLocalFoods(name) {
     protein: item.protein,
     fat: item.fat,
     carb: item.carb,
+    confidence: item.confidence || "high",
   }));
+}
+
+function genericPackagedEstimate(name) {
+  return {
+    source: "estimate",
+    sourceId: `estimate:generic:${normalizeLookupText(name)}`,
+    sourceType: "低置信估算",
+    sourceLabel: "低置信估算",
+    displayName: GENERIC_PACKAGED_ESTIMATE.displayName,
+    category: GENERIC_PACKAGED_ESTIMATE.category,
+    baseAmount: 100,
+    unitLabel: "g",
+    kcal: GENERIC_PACKAGED_ESTIMATE.kcal,
+    protein: GENERIC_PACKAGED_ESTIMATE.protein,
+    fat: GENERIC_PACKAGED_ESTIMATE.fat,
+    carb: GENERIC_PACKAGED_ESTIMATE.carb,
+    confidence: GENERIC_PACKAGED_ESTIMATE.confidence,
+    note: "没有识别出具体类别，仅用于临时占位，请优先按包装营养表修改",
+  };
 }
 
 async function fetchFoodNutritionCandidates(name) {
@@ -1408,34 +1576,29 @@ async function fetchFoodNutritionCandidates(name) {
   const results = [];
   const errors = [];
 
-  for (const query of queries) {
-    try {
-      results.push(...(await searchUsdaFoods(query)));
-    } catch (error) {
-      errors.push(error);
+  const onlineSearches = queries.flatMap((query) => [searchUsdaFoods(query), searchOpenFoodFacts(query)]);
+  const settled = await Promise.allSettled(onlineSearches);
+  settled.forEach((item) => {
+    if (item.status === "fulfilled") {
+      results.push(...item.value);
+    } else {
+      errors.push(item.reason);
     }
-  }
-
-  if (results.length < 3) {
-    for (const query of queries) {
-      try {
-        results.push(...(await searchOpenFoodFacts(query)));
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-  }
+  });
 
   const candidates = dedupeFoodLookupResults(results)
     .sort((left, right) => lookupResultScore(right) - lookupResultScore(left))
     .slice(0, 6);
 
   if (!candidates.length && errors.length) {
-    throw errors[0];
+    const fallback = genericPackagedEstimate(name);
+    foodLookupCache.set(cacheKey, [fallback]);
+    return [{ ...fallback }];
   }
 
-  foodLookupCache.set(cacheKey, candidates);
-  return candidates.map((item) => ({ ...item }));
+  const finalCandidates = candidates.length ? candidates : [genericPackagedEstimate(name)];
+  foodLookupCache.set(cacheKey, finalCandidates);
+  return finalCandidates.map((item) => ({ ...item }));
 }
 
 function addFoodDataLooksIncomplete(data) {
@@ -1748,11 +1911,18 @@ async function addFoodFromForm(form) {
     return;
   }
   let lookup = null;
+  let lookupResults = [];
   if (addFoodDataLooksIncomplete(data)) {
-    showToast("正在联网补全营养数据...");
+    showToast("正在智能补全营养数据...");
     try {
       const results = await fetchFoodNutritionCandidates(name);
+      lookupResults = results;
       lookup = results[0] || null;
+      if (lookup?.confidence === "low") {
+        showFoodLookupCandidates(name, results, form, "只找到低置信估算，请点击候选确认或手动填写营养数据");
+        showToast("只找到低置信估算，请确认后再添加");
+        return;
+      }
       if (results.length > 1) {
         foodLookupState = {
           status: "ready",
@@ -1773,8 +1943,10 @@ async function addFoodFromForm(form) {
     showToast("没有查到营养数据，请手动填写热量后再添加");
     return;
   }
-  const baseAmount = numberValue(data.get("baseAmount"), 1) || 1;
-  const unitLabel = String(data.get("unitLabel") || "份").trim() || "份";
+  const rawBaseAmount = String(data.get("baseAmount") || "").trim();
+  const rawUnitLabel = String(data.get("unitLabel") || "").trim();
+  const baseAmount = numberValue(rawBaseAmount || lookup?.baseAmount, 1) || 1;
+  const unitLabel = !rawUnitLabel || (lookup?.unitLabel && rawUnitLabel === "g" && lookup.unitLabel !== "g") ? lookup?.unitLabel || "份" : rawUnitLabel;
   const rawCategory = String(data.get("category") || "").trim();
   const category = !rawCategory || rawCategory === "其他" ? lookup?.category || "其他" : rawCategory;
   const macrosMissing = ["protein", "fat", "carb"].every((field) => {
@@ -1797,14 +1969,9 @@ async function addFoodFromForm(form) {
     }),
   );
   saveState();
-  foodLookupState = {
-    status: "idle",
-    query: "",
-    message: "",
-    results: [],
-    formDraft: null,
-  };
-  showToast(lookup ? `新食品已添加，营养数据来自 ${lookup.sourceLabel}` : "新食品已添加");
+  resetFoodLookupState();
+  const extra = lookupResults.length > 1 ? `，另有 ${lookupResults.length - 1} 个候选可参考` : "";
+  showToast(lookup ? `新食品已添加，营养数据来自 ${lookup.sourceLabel}${extra}` : "新食品已添加");
   render();
 }
 
