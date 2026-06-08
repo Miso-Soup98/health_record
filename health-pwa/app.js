@@ -2903,8 +2903,8 @@ function drawSector(ctx, centerX, centerY, radius, startAngle, endAngle) {
 function drawMacroTargetPie(ctx, width, height, items) {
   ctx.clearRect(0, 0, width, height);
   const centerX = width / 2;
-  const centerY = height * 0.42;
   const targetRadius = Math.min(width * 0.23, height * 0.25, 70);
+  const centerY = Math.min(Math.max(height * 0.48, targetRadius + 64), height - targetRadius - 24);
   const maxRadius = targetRadius * 1.36;
   const segment = Math.PI * 2 / items.length;
   const gap = 0.028;
@@ -3007,7 +3007,7 @@ function drawMacroTargetPie(ctx, width, height, items) {
   values.forEach((item, index) => {
     const middle = startBase + segment * index + segment / 2;
     const labelPoint = polygonPoint(centerX, centerY, maxRadius + 20, middle);
-    const labelY = Math.min(Math.max(labelPoint.y, 24), height - 42);
+    const labelY = Math.min(Math.max(labelPoint.y, 18), height - 42);
     ctx.textAlign = labelPoint.x < centerX - 4 ? "right" : labelPoint.x > centerX + 4 ? "left" : "center";
     ctx.fillStyle = "#1d231f";
     ctx.font = "650 12px system-ui, sans-serif";
