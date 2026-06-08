@@ -2428,7 +2428,7 @@ function drawMacroChart() {
   if (!latest) return drawEmpty(ctx, width, height, "暂无记录");
   const computed = computeRecord(latest);
   const targets = macroTargetValues(latest, computed);
-  drawMacroRadar(ctx, width, height, [
+  drawMacroTargetPie(ctx, width, height, [
     { label: "蛋白质", color: "#2f7d62", value: computed.protein, target: targets.protein },
     { label: "脂肪", color: "#d77843", value: computed.fat, target: targets.fat },
     { label: "碳水", color: "#4f67b1", value: computed.carb, target: targets.carb },
@@ -2625,94 +2625,128 @@ function polygonPoint(centerX, centerY, radius, angle) {
   };
 }
 
-function drawRadarPolygon(ctx, points) {
+function hexToRGBA(hex, alpha) {
+  const value = hex.replace("#", "");
+  const red = parseInt(value.slice(0, 2), 16);
+  const green = parseInt(value.slice(2, 4), 16);
+  const blue = parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function drawSector(ctx, centerX, centerY, radius, startAngle, endAngle) {
   ctx.beginPath();
-  points.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(point.x, point.y);
-    else ctx.lineTo(point.x, point.y);
-  });
+  ctx.moveTo(centerX, centerY);
+  ctx.arc(centerX, centerY, radius, startAngle, endAngle);
   ctx.closePath();
 }
 
-function drawMacroRadar(ctx, width, height, items) {
+function drawMacroTargetPie(ctx, width, height, items) {
   ctx.clearRect(0, 0, width, height);
   const centerX = width / 2;
-  const centerY = height * 0.44;
-  const radius = Math.min(width * 0.28, height * 0.28, 82);
-  const angles = items.map((_, index) => -Math.PI / 2 + (Math.PI * 2 / items.length) * index);
+  const centerY = height * 0.42;
+  const targetRadius = Math.min(width * 0.23, height * 0.25, 70);
+  const maxRadius = targetRadius * 1.36;
+  const segment = Math.PI * 2 / items.length;
+  const gap = 0.028;
+  const startBase = -Math.PI / 2 - segment / 2;
   const values = items.map((item) => ({
     ...item,
     percent: item.target > 0 ? item.value / item.target * 100 : 0,
   }));
 
-  const glow = ctx.createRadialGradient(centerX, centerY, radius * 0.15, centerX, centerY, radius * 1.25);
+  const glow = ctx.createRadialGradient(centerX, centerY, targetRadius * 0.18, centerX, centerY, maxRadius * 1.18);
   glow.addColorStop(0, "rgba(47, 125, 98, 0.18)");
   glow.addColorStop(0.58, "rgba(79, 103, 177, 0.08)");
   glow.addColorStop(1, "rgba(215, 120, 67, 0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(centerX, centerY, radius * 1.3, 0, Math.PI * 2);
+  ctx.arc(centerX, centerY, maxRadius * 1.15, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = "rgba(101, 114, 103, 0.22)";
+  ctx.save();
+  ctx.strokeStyle = "rgba(101, 114, 103, 0.2)";
   ctx.lineWidth = 1;
-  for (let level = 4; level >= 1; level -= 1) {
-    const levelRadius = radius * (level / 4);
-    const ringPoints = angles.map((angle) => polygonPoint(centerX, centerY, levelRadius, angle));
-    drawRadarPolygon(ctx, ringPoints);
+  [0.25, 0.5, 0.75].forEach((scale) => {
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, targetRadius * scale, 0, Math.PI * 2);
     ctx.stroke();
-  }
+  });
 
-  angles.forEach((angle) => {
-    const end = polygonPoint(centerX, centerY, radius, angle);
+  ctx.setLineDash([6, 5]);
+  ctx.strokeStyle = "rgba(31, 35, 31, 0.5)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, targetRadius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  values.forEach((item, index) => {
+    const start = startBase + segment * index + gap;
+    const end = startBase + segment * (index + 1) - gap;
+    drawSector(ctx, centerX, centerY, targetRadius, start, end);
+    ctx.fillStyle = hexToRGBA(item.color, 0.1);
+    ctx.fill();
+  });
+
+  values.forEach((item, index) => {
+    const start = startBase + segment * index + gap;
+    const end = startBase + segment * (index + 1) - gap;
+    const scale = Math.max(0, Math.min(1.36, item.percent / 100));
+    const fillRadius = targetRadius * scale;
+    const fill = ctx.createRadialGradient(centerX, centerY, targetRadius * 0.12, centerX, centerY, Math.max(fillRadius, targetRadius * 0.2));
+    fill.addColorStop(0, hexToRGBA(item.color, 0.34));
+    fill.addColorStop(0.72, hexToRGBA(item.color, 0.48));
+    fill.addColorStop(1, hexToRGBA(item.color, item.percent > 100 ? 0.68 : 0.56));
+    ctx.shadowColor = hexToRGBA(item.color, 0.28);
+    ctx.shadowBlur = item.percent > 100 ? 18 : 10;
+    drawSector(ctx, centerX, centerY, fillRadius, start, end);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (item.percent > 100) {
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, fillRadius, start, end);
+      ctx.stroke();
+    }
+  });
+
+  values.forEach((_, index) => {
+    const angle = startBase + segment * index;
+    const end = polygonPoint(centerX, centerY, maxRadius, angle);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(centerX, centerY);
     ctx.lineTo(end.x, end.y);
     ctx.stroke();
   });
 
-  const targetPoints = angles.map((angle) => polygonPoint(centerX, centerY, radius, angle));
-  ctx.save();
   ctx.strokeStyle = "rgba(31, 35, 31, 0.42)";
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([5, 5]);
-  drawRadarPolygon(ctx, targetPoints);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, targetRadius, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.restore();
 
-  const valuePoints = values.map((item, index) => {
-    const valueRadius = radius * Math.max(0, Math.min(1, item.percent / 100));
-    return polygonPoint(centerX, centerY, valueRadius, angles[index]);
-  });
-
-  const fill = ctx.createLinearGradient(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
-  fill.addColorStop(0, "rgba(47, 125, 98, 0.34)");
-  fill.addColorStop(0.52, "rgba(79, 103, 177, 0.22)");
-  fill.addColorStop(1, "rgba(215, 120, 67, 0.3)");
-  drawRadarPolygon(ctx, valuePoints);
-  ctx.fillStyle = fill;
-  ctx.shadowColor = "rgba(79, 103, 177, 0.2)";
-  ctx.shadowBlur = 18;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.strokeStyle = "rgba(217, 224, 218, 0.95)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, Math.max(13, targetRadius * 0.18), 0, Math.PI * 2);
   ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(31, 35, 31, 0.55)";
-  ctx.lineWidth = 2.2;
   ctx.stroke();
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#1d231f";
+  ctx.font = "650 11px system-ui, sans-serif";
+  ctx.fillText("100%", centerX, centerY + 4);
 
   values.forEach((item, index) => {
-    const point = valuePoints[index];
-    ctx.fillStyle = item.color;
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 2.4;
-    ctx.shadowColor = item.color;
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    const labelPoint = polygonPoint(centerX, centerY, radius + 24, angles[index]);
+    const middle = startBase + segment * index + segment / 2;
+    const labelPoint = polygonPoint(centerX, centerY, maxRadius + 20, middle);
     ctx.textAlign = labelPoint.x < centerX - 4 ? "right" : labelPoint.x > centerX + 4 ? "left" : "center";
     ctx.fillStyle = "#1d231f";
     ctx.font = "650 12px system-ui, sans-serif";
@@ -2728,10 +2762,10 @@ function drawMacroRadar(ctx, width, height, items) {
   ctx.textAlign = "center";
   ctx.fillStyle = "#1d231f";
   ctx.font = "650 12px system-ui, sans-serif";
-  ctx.fillText("目标完成度", centerX, height - 32);
+  ctx.fillText("三分目标盘", centerX, height - 32);
   ctx.fillStyle = "#657267";
   ctx.font = "11px system-ui, sans-serif";
-  ctx.fillText("虚线外圈 = 100%", centerX, height - 16);
+  ctx.fillText("虚线外圈 = 100%，超标会冲出外圈", centerX, height - 16);
   ctx.textAlign = "left";
 }
 
