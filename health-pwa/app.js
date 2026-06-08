@@ -9,7 +9,51 @@ const DEFAULT_SETTINGS = {
   normalTargetKcal: 2000,
   runTargetKcal: 2200,
   badmintonTargetKcal: 2600,
+  macroGoalMode: "normal",
 };
+
+const NUMERIC_SETTING_KEYS = [
+  "heightCm",
+  "bmrKcal",
+  "currentWeightKg",
+  "targetWeightKg",
+  "normalTargetKcal",
+  "runTargetKcal",
+  "badmintonTargetKcal",
+];
+
+const MACRO_GOAL_MODES = [
+  {
+    value: "normal",
+    label: "普通",
+    description: "沿用当前目标",
+    proteinPerKg: 1.6,
+    minProtein: 80,
+    fatRatio: 0.25,
+    minFat: 35,
+    minCarb: 80,
+  },
+  {
+    value: "fatLoss",
+    label: "减脂",
+    description: "更重视蛋白和热量缺口",
+    proteinPerKg: 1.8,
+    minProtein: 90,
+    fatRatio: 0.22,
+    minFat: 35,
+    minCarb: 60,
+  },
+  {
+    value: "muscleGain",
+    label: "增肌",
+    description: "更重视蛋白和训练碳水",
+    proteinPerKg: 1.8,
+    minProtein: 95,
+    fatRatio: 0.25,
+    minFat: 40,
+    minCarb: 140,
+  },
+];
 
 const DEFAULT_FOODS = [
   { key: "egg", name: "鸡蛋", unit: "1个", kcal: 75, protein: 6.2, fat: 5, carb: 0.4, category: "蛋白/脂肪" },
@@ -244,7 +288,7 @@ function loadState() {
     return {
       ...fallback,
       ...parsed,
-      settings: { ...fallback.settings, ...(parsed.settings || {}) },
+      settings: normalizeSettings({ ...fallback.settings, ...(parsed.settings || {}) }),
       foods: Array.isArray(parsed.foods) && parsed.foods.length ? normalizeFoods(parsed.foods) : fallback.foods,
       exercises: Array.isArray(parsed.exercises) && parsed.exercises.length ? normalizeExercises(parsed.exercises) : fallback.exercises,
       records: parsed.records || {},
@@ -257,6 +301,21 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function normalizeSettings(settings = {}) {
+  const next = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  NUMERIC_SETTING_KEYS.forEach((key) => {
+    next[key] = numberValue(next[key], DEFAULT_SETTINGS[key]);
+  });
+  if (!MACRO_GOAL_MODES.some((mode) => mode.value === next.macroGoalMode)) {
+    next.macroGoalMode = DEFAULT_SETTINGS.macroGoalMode;
+  }
+  return next;
+}
+
+function currentMacroGoalMode() {
+  return MACRO_GOAL_MODES.find((mode) => mode.value === state.settings.macroGoalMode) || MACRO_GOAL_MODES[0];
 }
 
 function structuredCloneSafe(value) {
@@ -702,6 +761,7 @@ function renderDashboardScreen() {
   const latest = summary.latest;
   const computed = summary.latestComputed;
   const netClass = computed && computed.netKcal > 0 ? "warning" : "positive";
+  const macroMode = currentMacroGoalMode();
   return `
     <main class="screen">
       <section class="grid four">
@@ -739,7 +799,7 @@ function renderDashboardScreen() {
           <div class="panel-header">
             <div>
               <h2 class="panel-title">三大营养素</h2>
-              <p class="panel-subtitle">${latest ? `${formatDate(latest.date)} 的估算` : "保存记录后显示"}</p>
+              <p class="panel-subtitle">${latest ? `${formatDate(latest.date)} 的估算 · ${macroMode.label}` : "保存记录后显示"}</p>
             </div>
           </div>
           <div class="chart-wrap"><canvas id="macroChart" aria-label="三大营养素"></canvas></div>
@@ -766,7 +826,7 @@ function renderDashboardScreen() {
           <div class="panel-header">
             <div>
               <h2 class="panel-title">健康建议</h2>
-              <p class="panel-subtitle">根据最近摄入自动生成</p>
+              <p class="panel-subtitle">根据最近摄入自动生成 · ${macroMode.label}</p>
             </div>
           </div>
           ${renderHealthAdvice(summary)}
@@ -835,6 +895,7 @@ function renderAdviceItem(item) {
 }
 
 function buildHealthAdvice(summary = dashboardSummary()) {
+  const mode = currentMacroGoalMode();
   const today = localISODate();
   const datedRecords = (summary?.records || sortedRecords("asc")).filter((record) => record.date <= today);
   const sourceRecords = (datedRecords.length ? datedRecords : summary?.records || sortedRecords("asc")).slice(-7);
@@ -895,20 +956,46 @@ function buildHealthAdvice(summary = dashboardSummary()) {
     add("info", "碳水偏低", "如果最近训练乏力或容易饿，可以在运动前后加一点米饭、燕麦、土豆或水果。");
   }
 
-  if (netKcal > 350) {
-    add("warn", "最近热量盈余较多", "若目标是减脂或维持，可以先从饮料、零食、夜宵和主食加量处少减一点。");
-  } else if (netKcal < -750) {
-    add("warn", "热量缺口偏大", "连续大缺口可能影响精力和恢复；可以优先补蛋白质、蔬菜和一份稳定主食。");
-  } else if (intakePercent >= 85 && intakePercent <= 115 && Math.abs(netKcal) <= 350) {
-    add("good", "整体节奏不错", "摄入和目标比较接近，继续保持记录频率，比追求每天完全一致更重要。");
-  }
+  addEnergyAdvice(add, mode.value, netKcal, intakePercent);
 
   return {
     recordsUsed: rows.length,
     macros,
     items: items.slice(0, 5),
-    balanceText: `日均净热量 ${netKcal >= 0 ? "+" : ""}${fmt(netKcal)} kcal`,
+    balanceText: `${mode.label}目标 · 日均净热量 ${netKcal >= 0 ? "+" : ""}${fmt(netKcal)} kcal`,
   };
+}
+
+function addEnergyAdvice(add, mode, netKcal, intakePercent) {
+  if (mode === "fatLoss") {
+    if (netKcal > 100) {
+      add("warn", "减脂热量偏高", "减脂模式下更适合保持温和缺口；可以先减少饮料、零食、夜宵或主食加量。");
+    } else if (netKcal < -850) {
+      add("warn", "减脂缺口过大", "缺口太大容易影响训练、饥饿感和恢复；优先补足蛋白质、蔬菜和一份稳定主食。");
+    } else if (netKcal <= -150 && netKcal >= -700) {
+      add("good", "减脂节奏不错", "最近是温和热量缺口，继续关注饱腹感、睡眠和训练表现。");
+    }
+    return;
+  }
+
+  if (mode === "muscleGain") {
+    if (netKcal < -100) {
+      add("warn", "增肌热量偏低", "增肌模式下长期缺口会影响训练恢复；可以加一份主食、乳制品或训练后加餐。");
+    } else if (netKcal > 800) {
+      add("warn", "增肌盈余偏大", "热量盈余过大会更容易增加脂肪；可以先控制高油零食和随手加餐。");
+    } else if (netKcal >= 100 && netKcal <= 550) {
+      add("good", "增肌盈余较稳", "最近有小幅热量盈余，适合配合力量训练观察体重和围度变化。");
+    }
+    return;
+  }
+
+  if (netKcal > 350) {
+    add("warn", "最近热量盈余较多", "若目标是维持，可以先从饮料、零食、夜宵和主食加量处少减一点。");
+  } else if (netKcal < -750) {
+    add("warn", "热量缺口偏大", "连续大缺口可能影响精力和恢复；可以优先补蛋白质、蔬菜和一份稳定主食。");
+  } else if (intakePercent >= 85 && intakePercent <= 115 && Math.abs(netKcal) <= 350) {
+    add("good", "整体节奏不错", "摄入和目标比较接近，继续保持记录频率，比追求每天完全一致更重要。");
+  }
 }
 
 function adviceMacro(label, value, target, percent) {
@@ -1196,6 +1283,7 @@ function renderSettingsScreen() {
           ${settingsInput("normalTargetKcal", "普通日目标 kcal")}
           ${settingsInput("runTargetKcal", "跑步日目标 kcal")}
           ${settingsInput("badmintonTargetKcal", "羽毛球日目标 kcal")}
+          ${settingsSelect("macroGoalMode", "三大营养素目标", MACRO_GOAL_MODES)}
         </form>
       </section>
 
@@ -1396,6 +1484,25 @@ function settingsInput(name, label) {
     <div class="field">
       <label for="${name}">${label}</label>
       <input id="${name}" name="${name}" inputmode="decimal" value="${escapeHTML(state.settings[name])}" />
+    </div>
+  `;
+}
+
+function settingsSelect(name, label, options) {
+  return `
+    <div class="field">
+      <label for="${name}">${label}</label>
+      <select id="${name}" name="${name}">
+        ${options
+          .map(
+            (option) => `
+              <option value="${escapeHTML(option.value)}" ${state.settings[name] === option.value ? "selected" : ""}>
+                ${escapeHTML(option.label)} - ${escapeHTML(option.description)}
+              </option>
+            `,
+          )
+          .join("")}
+      </select>
     </div>
   `;
 }
@@ -2028,9 +2135,13 @@ function saveRecordFromForm(form) {
 
 function saveSettings(form) {
   const data = new FormData(form);
-  Object.keys(DEFAULT_SETTINGS).forEach((key) => {
+  NUMERIC_SETTING_KEYS.forEach((key) => {
     state.settings[key] = numberValue(data.get(key), state.settings[key]);
   });
+  const macroGoalMode = String(data.get("macroGoalMode") || DEFAULT_SETTINGS.macroGoalMode);
+  state.settings.macroGoalMode = MACRO_GOAL_MODES.some((mode) => mode.value === macroGoalMode)
+    ? macroGoalMode
+    : DEFAULT_SETTINGS.macroGoalMode;
   saveState();
   showToast("参数已保存");
   render();
@@ -2309,7 +2420,7 @@ async function importJSON(event) {
     const parsed = JSON.parse(raw);
     const data = parsed.data || parsed;
     if (!data.records || !data.settings) throw new Error("invalid backup");
-    state.settings = { ...state.settings, ...data.settings };
+    state.settings = normalizeSettings({ ...state.settings, ...data.settings });
     state.foods = Array.isArray(data.foods) ? normalizeFoods(data.foods) : state.foods;
     state.exercises = Array.isArray(data.exercises) ? normalizeExercises(data.exercises) : state.exercises;
     state.records = data.records;
@@ -2435,7 +2546,7 @@ async function cloudPull() {
     const rows = await cloudFetch(`/rest/v1/health_app_state?select=data&user_id=eq.${encodeURIComponent(state.cloud.userId)}`);
     const data = rows?.[0]?.data;
     if (!data) throw new Error("云端暂无数据，可先上传一次");
-    state.settings = { ...state.settings, ...(data.settings || {}) };
+    state.settings = normalizeSettings({ ...state.settings, ...(data.settings || {}) });
     state.foods = Array.isArray(data.foods) ? normalizeFoods(data.foods) : state.foods;
     state.exercises = Array.isArray(data.exercises) ? normalizeExercises(data.exercises) : state.exercises;
     state.records = data.records || state.records;
@@ -2584,11 +2695,12 @@ function drawMacroChart() {
 }
 
 function macroTargetValues(record, computed) {
+  const mode = currentMacroGoalMode();
   const weight = numberValue(record.weightKg, computed.weight || state.settings.currentWeightKg || 75);
   const targetKcal = numberValue(computed.targetKcal, state.settings.normalTargetKcal || 2000);
-  const protein = Math.max(80, weight * 1.6);
-  const fat = Math.max(35, targetKcal * 0.25 / 9);
-  const carb = Math.max(80, (targetKcal - protein * 4 - fat * 9) / 4);
+  const protein = Math.max(mode.minProtein, weight * mode.proteinPerKg);
+  const fat = Math.max(mode.minFat, targetKcal * mode.fatRatio / 9);
+  const carb = Math.max(mode.minCarb, (targetKcal - protein * 4 - fat * 9) / 4);
   return { protein, fat, carb };
 }
 
