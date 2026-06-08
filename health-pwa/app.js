@@ -2427,11 +2427,21 @@ function drawMacroChart() {
   const latest = dashboardSummary().latest;
   if (!latest) return drawEmpty(ctx, width, height, "暂无记录");
   const computed = computeRecord(latest);
+  const targets = macroTargetValues(latest, computed);
   drawMacroRadar(ctx, width, height, [
-    { label: "蛋白质", color: "#2f7d62", value: computed.protein },
-    { label: "脂肪", color: "#d77843", value: computed.fat },
-    { label: "碳水", color: "#4f67b1", value: computed.carb },
+    { label: "蛋白质", color: "#2f7d62", value: computed.protein, target: targets.protein },
+    { label: "脂肪", color: "#d77843", value: computed.fat, target: targets.fat },
+    { label: "碳水", color: "#4f67b1", value: computed.carb, target: targets.carb },
   ]);
+}
+
+function macroTargetValues(record, computed) {
+  const weight = numberValue(record.weightKg, computed.weight || state.settings.currentWeightKg || 75);
+  const targetKcal = numberValue(computed.targetKcal, state.settings.normalTargetKcal || 2000);
+  const protein = Math.max(80, weight * 1.6);
+  const fat = Math.max(35, targetKcal * 0.25 / 9);
+  const carb = Math.max(80, (targetKcal - protein * 4 - fat * 9) / 4);
+  return { protein, fat, carb };
 }
 
 function drawMultiLine(ctx, width, height, labels, series, hover = null) {
@@ -2627,10 +2637,13 @@ function drawRadarPolygon(ctx, points) {
 function drawMacroRadar(ctx, width, height, items) {
   ctx.clearRect(0, 0, width, height);
   const centerX = width / 2;
-  const centerY = height * 0.48;
-  const radius = Math.min(width * 0.29, height * 0.31, 92);
-  const max = Math.max(...items.map((item) => item.value), 30) * 1.12;
+  const centerY = height * 0.44;
+  const radius = Math.min(width * 0.28, height * 0.28, 82);
   const angles = items.map((_, index) => -Math.PI / 2 + (Math.PI * 2 / items.length) * index);
+  const values = items.map((item) => ({
+    ...item,
+    percent: item.target > 0 ? item.value / item.target * 100 : 0,
+  }));
 
   const glow = ctx.createRadialGradient(centerX, centerY, radius * 0.15, centerX, centerY, radius * 1.25);
   glow.addColorStop(0, "rgba(47, 125, 98, 0.18)");
@@ -2658,8 +2671,17 @@ function drawMacroRadar(ctx, width, height, items) {
     ctx.stroke();
   });
 
-  const valuePoints = items.map((item, index) => {
-    const valueRadius = radius * Math.min(1, item.value / max);
+  const targetPoints = angles.map((angle) => polygonPoint(centerX, centerY, radius, angle));
+  ctx.save();
+  ctx.strokeStyle = "rgba(31, 35, 31, 0.42)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 5]);
+  drawRadarPolygon(ctx, targetPoints);
+  ctx.stroke();
+  ctx.restore();
+
+  const valuePoints = values.map((item, index) => {
+    const valueRadius = radius * Math.max(0, Math.min(1, item.percent / 100));
     return polygonPoint(centerX, centerY, valueRadius, angles[index]);
   });
 
@@ -2677,7 +2699,7 @@ function drawMacroRadar(ctx, width, height, items) {
   ctx.lineWidth = 2.2;
   ctx.stroke();
 
-  items.forEach((item, index) => {
+  values.forEach((item, index) => {
     const point = valuePoints[index];
     ctx.fillStyle = item.color;
     ctx.strokeStyle = "#ffffff";
@@ -2690,20 +2712,26 @@ function drawMacroRadar(ctx, width, height, items) {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    const labelPoint = polygonPoint(centerX, centerY, radius + 25, angles[index]);
+    const labelPoint = polygonPoint(centerX, centerY, radius + 24, angles[index]);
     ctx.textAlign = labelPoint.x < centerX - 4 ? "right" : labelPoint.x > centerX + 4 ? "left" : "center";
     ctx.fillStyle = "#1d231f";
     ctx.font = "650 12px system-ui, sans-serif";
     ctx.fillText(item.label, labelPoint.x, labelPoint.y - 3);
     ctx.fillStyle = item.color;
     ctx.font = "12px system-ui, sans-serif";
-    ctx.fillText(`${fmt(item.value, 1)}g`, labelPoint.x, labelPoint.y + 14);
+    ctx.fillText(`${fmt(item.percent, 0)}% · ${fmt(item.value, 1)}g`, labelPoint.x, labelPoint.y + 14);
+    ctx.fillStyle = "#657267";
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText(`目标 ${fmt(item.target, 0)}g`, labelPoint.x, labelPoint.y + 29);
   });
 
   ctx.textAlign = "center";
+  ctx.fillStyle = "#1d231f";
+  ctx.font = "650 12px system-ui, sans-serif";
+  ctx.fillText("目标完成度", centerX, height - 32);
   ctx.fillStyle = "#657267";
-  ctx.font = "12px system-ui, sans-serif";
-  ctx.fillText(`外圈 ${fmt(max, 1)}g`, centerX, height - 18);
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.fillText("虚线外圈 = 100%", centerX, height - 16);
   ctx.textAlign = "left";
 }
 
