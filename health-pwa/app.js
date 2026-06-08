@@ -3007,16 +3007,17 @@ function drawMacroTargetPie(ctx, width, height, items) {
   values.forEach((item, index) => {
     const middle = startBase + segment * index + segment / 2;
     const labelPoint = polygonPoint(centerX, centerY, maxRadius + 20, middle);
+    const labelY = Math.min(Math.max(labelPoint.y, 24), height - 42);
     ctx.textAlign = labelPoint.x < centerX - 4 ? "right" : labelPoint.x > centerX + 4 ? "left" : "center";
     ctx.fillStyle = "#1d231f";
     ctx.font = "650 12px system-ui, sans-serif";
-    ctx.fillText(item.label, labelPoint.x, labelPoint.y - 3);
+    ctx.fillText(item.label, labelPoint.x, labelY - 3);
     ctx.fillStyle = item.color;
     ctx.font = "12px system-ui, sans-serif";
-    ctx.fillText(`${fmt(item.percent, 0)}% · ${fmt(item.value, 1)}g`, labelPoint.x, labelPoint.y + 14);
+    ctx.fillText(`${fmt(item.percent, 0)}% · ${fmt(item.value, 1)}g`, labelPoint.x, labelY + 14);
     ctx.fillStyle = "#657267";
     ctx.font = "11px system-ui, sans-serif";
-    ctx.fillText(`目标 ${fmt(item.target, 0)}g`, labelPoint.x, labelPoint.y + 29);
+    ctx.fillText(`目标 ${fmt(item.target, 0)}g`, labelPoint.x, labelY + 29);
   });
 
   ctx.textAlign = "left";
