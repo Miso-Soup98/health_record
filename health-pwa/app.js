@@ -211,6 +211,9 @@ let foodLookupState = {
   formDraft: null,
 };
 const foodLookupCache = new Map();
+const chartLayouts = {};
+const chartHoverState = {};
+let chartFrame = null;
 
 const state = loadState();
 
@@ -1730,6 +1733,8 @@ function bindCurrentScreen() {
     button.addEventListener("click", () => handleAction(button.dataset.action));
   });
 
+  bindChartHoverHandlers();
+
   const dateInput = document.getElementById("date");
   if (dateInput) {
     dateInput.addEventListener("change", () => {
@@ -2302,6 +2307,64 @@ function drawCharts() {
   drawMacroChart();
 }
 
+function scheduleDrawCharts() {
+  if (chartFrame) return;
+  chartFrame = requestAnimationFrame(() => {
+    chartFrame = null;
+    drawCharts();
+  });
+}
+
+function bindChartHoverHandlers() {
+  ["energyChart", "weightChart"].forEach((id) => {
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    canvas.addEventListener("pointermove", (event) => updateChartHover(id, event));
+    canvas.addEventListener("pointerdown", (event) => updateChartHover(id, event));
+    canvas.addEventListener("pointerleave", () => clearChartHover(id));
+  });
+}
+
+function pointerPositionInCanvas(canvas, event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+}
+
+function updateChartHover(id, event) {
+  const layout = chartLayouts[id];
+  const canvas = document.getElementById(id);
+  if (!layout || !canvas) return;
+  const pointer = pointerPositionInCanvas(canvas, event);
+  let nearest = null;
+  let nearestDistance = Infinity;
+  layout.points.forEach((point) => {
+    const distance = Math.hypot(point.x - pointer.x, point.y - pointer.y);
+    if (distance < nearestDistance) {
+      nearest = point;
+      nearestDistance = distance;
+    }
+  });
+
+  const next = nearest && nearestDistance <= 24 ? { dataIndex: nearest.dataIndex, seriesIndex: nearest.seriesIndex } : null;
+  const current = chartHoverState[id] || null;
+  const changed = current?.dataIndex !== next?.dataIndex || current?.seriesIndex !== next?.seriesIndex;
+  canvas.style.cursor = next ? "crosshair" : "default";
+  if (!changed) return;
+  chartHoverState[id] = next;
+  scheduleDrawCharts();
+}
+
+function clearChartHover(id) {
+  const canvas = document.getElementById(id);
+  if (!chartHoverState[id]) return;
+  chartHoverState[id] = null;
+  if (canvas) canvas.style.cursor = "default";
+  scheduleDrawCharts();
+}
+
 function setupCanvas(id) {
   const canvas = document.getElementById(id);
   if (!canvas) return null;
@@ -2332,11 +2395,11 @@ function drawEnergyChart() {
   const intake = records.map((record) => computeRecord(record).intakeKcal);
   const burn = records.map((record) => computeRecord(record).totalBurn);
   const net = records.map((record) => computeRecord(record).netKcal);
-  drawMultiLine(ctx, width, height, labels, [
-    { label: "摄入", color: "#2f7d62", values: intake },
-    { label: "消耗", color: "#d77843", values: burn },
-    { label: "净热量", color: "#4f67b1", values: net },
-  ]);
+  chartLayouts.energyChart = drawMultiLine(ctx, width, height, labels, [
+    { label: "摄入", color: "#2f7d62", values: intake, unit: "kcal", digits: 0 },
+    { label: "消耗", color: "#d77843", values: burn, unit: "kcal", digits: 0 },
+    { label: "净热量", color: "#4f67b1", values: net, unit: "kcal", digits: 0 },
+  ], chartHoverState.energyChart);
 }
 
 function drawWeightChart() {
@@ -2351,10 +2414,10 @@ function drawWeightChart() {
     const nearby = dateRangeRecords(record.date, 7).map((item) => numberValue(item.weightKg, NaN));
     return average(nearby);
   });
-  drawMultiLine(ctx, width, height, labels, [
-    { label: "体重", color: "#4f67b1", values: weights },
-    { label: "7日均重", color: "#2f7d62", values: rolling },
-  ]);
+  chartLayouts.weightChart = drawMultiLine(ctx, width, height, labels, [
+    { label: "体重", color: "#4f67b1", values: weights, unit: "kg", digits: 1 },
+    { label: "7日均重", color: "#2f7d62", values: rolling, unit: "kg", digits: 1 },
+  ], chartHoverState.weightChart);
 }
 
 function drawMacroChart() {
@@ -2364,14 +2427,14 @@ function drawMacroChart() {
   const latest = dashboardSummary().latest;
   if (!latest) return drawEmpty(ctx, width, height, "暂无记录");
   const computed = computeRecord(latest);
-  drawBars(ctx, width, height, [
+  drawMacroRadar(ctx, width, height, [
     { label: "蛋白质", color: "#2f7d62", value: computed.protein },
     { label: "脂肪", color: "#d77843", value: computed.fat },
     { label: "碳水", color: "#4f67b1", value: computed.carb },
   ]);
 }
 
-function drawMultiLine(ctx, width, height, labels, series) {
+function drawMultiLine(ctx, width, height, labels, series, hover = null) {
   const pad = { top: 28, right: 18, bottom: 42, left: 48 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
@@ -2404,22 +2467,31 @@ function drawMultiLine(ctx, width, height, labels, series) {
 
   const xFor = (index) => pad.left + (labels.length === 1 ? plotW / 2 : (plotW / (labels.length - 1)) * index);
   const yFor = (value) => pad.top + ((max - value) / (max - min)) * plotH;
+  const points = [];
 
-  series.forEach((item) => {
+  series.forEach((item, seriesIndex) => {
     ctx.strokeStyle = item.color;
     ctx.lineWidth = 2.2;
     ctx.beginPath();
+    let started = false;
     item.values.forEach((value, index) => {
+      if (!Number.isFinite(value)) return;
       const x = xFor(index);
       const y = yFor(value);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
     });
     ctx.stroke();
     ctx.fillStyle = item.color;
     item.values.forEach((value, index) => {
+      if (!Number.isFinite(value)) return;
       const x = xFor(index);
       const y = yFor(value);
+      points.push({ x, y, value, dataIndex: index, seriesIndex, color: item.color, label: item.label });
       ctx.beginPath();
       ctx.arc(x, y, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -2440,41 +2512,198 @@ function drawMultiLine(ctx, width, height, labels, series) {
     ctx.fillText(item.label, legendX + 17, 12);
     legendX += 78;
   });
+
+  if (hover) drawLineHover(ctx, width, height, labels, series, points, hover, pad);
+  return { points, pad, plotW, plotH };
 }
 
-function drawBars(ctx, width, height, bars) {
-  const pad = { top: 28, right: 22, bottom: 42, left: 34 };
-  const max = Math.max(...bars.map((item) => item.value), 10) * 1.18;
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-  const barW = Math.min(86, plotW / bars.length * 0.52);
-  const gap = (plotW - barW * bars.length) / Math.max(1, bars.length - 1);
+function drawLineHover(ctx, width, height, labels, series, points, hover, pad) {
+  const active = points.find((point) => point.dataIndex === hover.dataIndex && point.seriesIndex === hover.seriesIndex);
+  if (!active) return;
+  const seriesRows = series
+    .map((item, seriesIndex) => ({
+      label: item.label,
+      color: item.color,
+      value: item.values[hover.dataIndex],
+      unit: item.unit || "",
+      digits: item.digits ?? 0,
+      active: seriesIndex === hover.seriesIndex,
+    }))
+    .filter((item) => Number.isFinite(item.value));
 
-  ctx.clearRect(0, 0, width, height);
-  ctx.strokeStyle = "#d9e0da";
-  ctx.fillStyle = "#657267";
+  ctx.save();
+  ctx.strokeStyle = "rgba(31, 35, 31, 0.22)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 5]);
+  ctx.beginPath();
+  ctx.moveTo(active.x, pad.top);
+  ctx.lineTo(active.x, height - pad.bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  points
+    .filter((point) => point.dataIndex === hover.dataIndex)
+    .forEach((point) => {
+      const isActive = point.seriesIndex === hover.seriesIndex;
+      ctx.fillStyle = point.color;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = isActive ? 3 : 2;
+      ctx.shadowColor = point.color;
+      ctx.shadowBlur = isActive ? 14 : 6;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, isActive ? 6 : 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+  ctx.shadowBlur = 0;
+
+  const lines = [`日期 ${labels[hover.dataIndex]}`, ...seriesRows.map((item) => `${item.label} ${fmt(item.value, item.digits)} ${item.unit}`)];
   ctx.font = "12px system-ui, sans-serif";
+  const tooltipW = Math.max(...lines.map((line) => ctx.measureText(line).width)) + 32;
+  const tooltipH = 28 + seriesRows.length * 20;
+  let x = active.x + 14;
+  let y = active.y - tooltipH - 14;
+  if (x + tooltipW > width - 8) x = active.x - tooltipW - 14;
+  if (y < 8) y = active.y + 14;
+  if (y + tooltipH > height - 8) y = height - tooltipH - 8;
 
-  for (let i = 0; i <= 4; i += 1) {
-    const y = pad.top + (plotH / 4) * i;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+  ctx.strokeStyle = "rgba(217, 224, 218, 0.95)";
+  ctx.lineWidth = 1;
+  ctx.shadowColor = "rgba(31, 43, 35, 0.18)";
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 6;
+  roundRect(ctx, x, y, tooltipW, tooltipH, 8);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.stroke();
+
+  ctx.fillStyle = "#1d231f";
+  ctx.font = "650 12px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(lines[0], x + 12, y + 18);
+
+  seriesRows.forEach((item, index) => {
+    const rowY = y + 38 + index * 20;
+    ctx.fillStyle = item.color;
     ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(width - pad.right, y);
+    ctx.arc(x + 14, rowY - 4, item.active ? 4.5 : 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = item.active ? "#1d231f" : "#657267";
+    ctx.font = item.active ? "650 12px system-ui, sans-serif" : "12px system-ui, sans-serif";
+    ctx.fillText(`${item.label} ${fmt(item.value, item.digits)} ${item.unit}`, x + 25, rowY);
+  });
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function polygonPoint(centerX, centerY, radius, angle) {
+  return {
+    x: centerX + Math.cos(angle) * radius,
+    y: centerY + Math.sin(angle) * radius,
+  };
+}
+
+function drawRadarPolygon(ctx, points) {
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+  });
+  ctx.closePath();
+}
+
+function drawMacroRadar(ctx, width, height, items) {
+  ctx.clearRect(0, 0, width, height);
+  const centerX = width / 2;
+  const centerY = height * 0.48;
+  const radius = Math.min(width * 0.29, height * 0.31, 92);
+  const max = Math.max(...items.map((item) => item.value), 30) * 1.12;
+  const angles = items.map((_, index) => -Math.PI / 2 + (Math.PI * 2 / items.length) * index);
+
+  const glow = ctx.createRadialGradient(centerX, centerY, radius * 0.15, centerX, centerY, radius * 1.25);
+  glow.addColorStop(0, "rgba(47, 125, 98, 0.18)");
+  glow.addColorStop(0.58, "rgba(79, 103, 177, 0.08)");
+  glow.addColorStop(1, "rgba(215, 120, 67, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius * 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(101, 114, 103, 0.22)";
+  ctx.lineWidth = 1;
+  for (let level = 4; level >= 1; level -= 1) {
+    const levelRadius = radius * (level / 4);
+    const ringPoints = angles.map((angle) => polygonPoint(centerX, centerY, levelRadius, angle));
+    drawRadarPolygon(ctx, ringPoints);
     ctx.stroke();
   }
 
-  bars.forEach((bar, index) => {
-    const x = pad.left + (barW + gap) * index;
-    const barH = (bar.value / max) * plotH;
-    const y = pad.top + plotH - barH;
-    ctx.fillStyle = bar.color;
-    ctx.fillRect(x, y, barW, barH);
-    ctx.fillStyle = "#1d231f";
-    ctx.textAlign = "center";
-    ctx.fillText(`${fmt(bar.value, 1)}g`, x + barW / 2, y - 8);
-    ctx.fillStyle = "#657267";
-    ctx.fillText(bar.label, x + barW / 2, height - 16);
+  angles.forEach((angle) => {
+    const end = polygonPoint(centerX, centerY, radius, angle);
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
   });
+
+  const valuePoints = items.map((item, index) => {
+    const valueRadius = radius * Math.min(1, item.value / max);
+    return polygonPoint(centerX, centerY, valueRadius, angles[index]);
+  });
+
+  const fill = ctx.createLinearGradient(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
+  fill.addColorStop(0, "rgba(47, 125, 98, 0.34)");
+  fill.addColorStop(0.52, "rgba(79, 103, 177, 0.22)");
+  fill.addColorStop(1, "rgba(215, 120, 67, 0.3)");
+  drawRadarPolygon(ctx, valuePoints);
+  ctx.fillStyle = fill;
+  ctx.shadowColor = "rgba(79, 103, 177, 0.2)";
+  ctx.shadowBlur = 18;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(31, 35, 31, 0.55)";
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+
+  items.forEach((item, index) => {
+    const point = valuePoints[index];
+    ctx.fillStyle = item.color;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2.4;
+    ctx.shadowColor = item.color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    const labelPoint = polygonPoint(centerX, centerY, radius + 25, angles[index]);
+    ctx.textAlign = labelPoint.x < centerX - 4 ? "right" : labelPoint.x > centerX + 4 ? "left" : "center";
+    ctx.fillStyle = "#1d231f";
+    ctx.font = "650 12px system-ui, sans-serif";
+    ctx.fillText(item.label, labelPoint.x, labelPoint.y - 3);
+    ctx.fillStyle = item.color;
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText(`${fmt(item.value, 1)}g`, labelPoint.x, labelPoint.y + 14);
+  });
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#657267";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillText(`外圈 ${fmt(max, 1)}g`, centerX, height - 18);
   ctx.textAlign = "left";
 }
 
