@@ -760,6 +760,18 @@ function renderDashboardScreen() {
           </div>
         </div>
       </section>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">健康建议</h2>
+              <p class="panel-subtitle">根据最近摄入自动生成</p>
+            </div>
+          </div>
+          ${renderHealthAdvice(summary)}
+        </div>
+      </section>
     </main>
   `;
 }
@@ -776,6 +788,142 @@ function renderStatCard(iconName, label, value, note) {
 
 function renderMiniStat(label, value) {
   return `<div class="mini-stat"><span>${escapeHTML(label)}</span><strong>${value}</strong></div>`;
+}
+
+function renderHealthAdvice(summary) {
+  const advice = buildHealthAdvice(summary);
+  if (!advice.recordsUsed) {
+    return `<div class="empty-state compact-empty">保存饮食记录后，这里会根据摄入和三大营养素给出建议。</div>`;
+  }
+
+  return `
+    <div class="advice-panel">
+      <div class="advice-summary">
+        <div>
+          <span class="advice-kicker">最近 ${advice.recordsUsed} 条平均</span>
+          <strong>${escapeHTML(advice.balanceText)}</strong>
+        </div>
+        <div class="advice-chip-row">
+          ${advice.macros.map(renderAdviceChip).join("")}
+        </div>
+      </div>
+      <div class="advice-list">
+        ${advice.items.map(renderAdviceItem).join("")}
+      </div>
+      <p class="advice-footnote">仅供日常记录参考；如果有疾病、用药、备孕或特殊训练目标，请优先听医生或营养师建议。</p>
+    </div>
+  `;
+}
+
+function renderAdviceChip(item) {
+  return `
+    <span class="advice-chip ${escapeHTML(item.level)}">
+      <span>${escapeHTML(item.label)}</span>
+      <strong>${fmt(item.percent, 0)}%</strong>
+      <small>${fmt(item.value, 1)} / ${fmt(item.target, 0)}g</small>
+    </span>
+  `;
+}
+
+function renderAdviceItem(item) {
+  return `
+    <article class="advice-item ${escapeHTML(item.level)}">
+      <strong>${escapeHTML(item.title)}</strong>
+      <p>${escapeHTML(item.text)}</p>
+    </article>
+  `;
+}
+
+function buildHealthAdvice(summary = dashboardSummary()) {
+  const today = localISODate();
+  const datedRecords = (summary?.records || sortedRecords("asc")).filter((record) => record.date <= today);
+  const sourceRecords = (datedRecords.length ? datedRecords : summary?.records || sortedRecords("asc")).slice(-7);
+  if (!sourceRecords.length) {
+    return { recordsUsed: 0, macros: [], items: [], balanceText: "" };
+  }
+
+  const rows = sourceRecords.map((record) => {
+    const computed = computeRecord(record);
+    const targets = macroTargetValues(record, computed);
+    return { record, computed, targets };
+  });
+  const avg = (pick) => average(rows.map(pick)) || 0;
+  const protein = avg((row) => row.computed.protein);
+  const fat = avg((row) => row.computed.fat);
+  const carb = avg((row) => row.computed.carb);
+  const proteinTarget = avg((row) => row.targets.protein);
+  const fatTarget = avg((row) => row.targets.fat);
+  const carbTarget = avg((row) => row.targets.carb);
+  const netKcal = avg((row) => row.computed.netKcal);
+  const intakeKcal = avg((row) => row.computed.intakeKcal);
+  const targetKcal = avg((row) => row.computed.targetKcal);
+  const proteinPercent = percentOf(protein, proteinTarget);
+  const fatPercent = percentOf(fat, fatTarget);
+  const carbPercent = percentOf(carb, carbTarget);
+  const intakePercent = percentOf(intakeKcal, targetKcal);
+  const macros = [
+    adviceMacro("蛋白质", protein, proteinTarget, proteinPercent),
+    adviceMacro("脂肪", fat, fatTarget, fatPercent),
+    adviceMacro("碳水", carb, carbTarget, carbPercent),
+  ];
+  const items = [];
+  const add = (level, title, text) => items.push({ level, title, text });
+
+  if (rows.length < 3) {
+    add("info", "数据还偏少", "先连续记录 3 天以上，建议会更稳定；现在可以先看每餐是否有蛋白质、蔬菜和主食。");
+  }
+
+  if (proteinPercent < 70) {
+    add("warn", "蛋白质明显偏低", "每餐补一个蛋白来源会更稳，比如鸡蛋、无糖酸奶、鸡胸、鱼虾、豆腐或豆类。");
+  } else if (proteinPercent < 90) {
+    add("info", "蛋白质略低", "可以把蛋白质分散到早中晚，不必靠一餐猛补；运动日尤其要留意。");
+  } else if (proteinPercent > 145) {
+    add("warn", "蛋白质偏高", "如果不是有明确训练安排，可以减少大份肉类或蛋白粉，把空间留给蔬菜和主食。");
+  } else {
+    add("good", "蛋白质比较稳", "当前蛋白质接近目标，继续保持每餐都有稳定蛋白来源。");
+  }
+
+  if (fatPercent > 125) {
+    add("warn", "脂肪摄入偏高", "优先检查油炸食物、肥肉、坚果、甜点和酱料；烹饪方式可以更多用蒸、煮、烤。");
+  } else if (fatPercent < 60) {
+    add("info", "脂肪偏低", "可以适量加入鱼类、坚果、牛油果或橄榄油，别让饮食长期过于干瘦。");
+  }
+
+  if (carbPercent > 135) {
+    add("warn", "碳水偏高", "先看含糖饮料、零食和主食份量；保留训练前后的主食，减少随手吃的精制碳水。");
+  } else if (carbPercent < 65) {
+    add("info", "碳水偏低", "如果最近训练乏力或容易饿，可以在运动前后加一点米饭、燕麦、土豆或水果。");
+  }
+
+  if (netKcal > 350) {
+    add("warn", "最近热量盈余较多", "若目标是减脂或维持，可以先从饮料、零食、夜宵和主食加量处少减一点。");
+  } else if (netKcal < -750) {
+    add("warn", "热量缺口偏大", "连续大缺口可能影响精力和恢复；可以优先补蛋白质、蔬菜和一份稳定主食。");
+  } else if (intakePercent >= 85 && intakePercent <= 115 && Math.abs(netKcal) <= 350) {
+    add("good", "整体节奏不错", "摄入和目标比较接近，继续保持记录频率，比追求每天完全一致更重要。");
+  }
+
+  return {
+    recordsUsed: rows.length,
+    macros,
+    items: items.slice(0, 5),
+    balanceText: `日均净热量 ${netKcal >= 0 ? "+" : ""}${fmt(netKcal)} kcal`,
+  };
+}
+
+function adviceMacro(label, value, target, percent) {
+  return {
+    label,
+    value,
+    target,
+    percent,
+    level: percent < 70 || percent > 130 ? "warn" : percent < 90 || percent > 115 ? "info" : "good",
+  };
+}
+
+function percentOf(value, target) {
+  if (!Number.isFinite(value) || !Number.isFinite(target) || target <= 0) return 0;
+  return value / target * 100;
 }
 
 function renderRecordScreen() {
@@ -2759,13 +2907,6 @@ function drawMacroTargetPie(ctx, width, height, items) {
     ctx.fillText(`目标 ${fmt(item.target, 0)}g`, labelPoint.x, labelPoint.y + 29);
   });
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#1d231f";
-  ctx.font = "650 12px system-ui, sans-serif";
-  ctx.fillText("三分目标盘", centerX, height - 32);
-  ctx.fillStyle = "#657267";
-  ctx.font = "11px system-ui, sans-serif";
-  ctx.fillText("虚线外圈 = 100%，超标会冲出外圈", centerX, height - 16);
   ctx.textAlign = "left";
 }
 
