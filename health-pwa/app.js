@@ -560,6 +560,52 @@ function ratioForFood(item, amount, mode) {
   };
 }
 
+function foodNutritionPart(name, item, amount, mode) {
+  const nutrition = ratioForFood(item, amount, mode);
+  return {
+    name,
+    amount: numberValue(amount, 0),
+    ...nutrition,
+  };
+}
+
+function recordFoodNutritionParts(record) {
+  const meat = foodByKey(record.meatKey);
+  return [
+    foodNutritionPart("鸡蛋", foodByKey("egg"), record.eggs, "unit"),
+    foodNutritionPart("酸奶", foodByKey("yogurt"), record.yogurtG, "per100"),
+    foodNutritionPart("麦片", foodByKey("oatmeal"), record.oatmealG, "per30"),
+    foodNutritionPart("米饭", foodByKey("rice"), record.riceServings, "unit"),
+    foodNutritionPart("魔芋丝", foodByKey("konjac"), record.konjacG, "per100"),
+    foodNutritionPart("蔬菜", foodByKey("vegetables"), record.vegetablesG, "per100"),
+    foodNutritionPart(meat?.name || "肉类", meat, record.meatG, "per100"),
+    foodNutritionPart("香蕉", foodByKey("banana"), record.bananas, "unit"),
+    ...(record.otherFoods || []).map((entry) => {
+      const item = foodByKey(entry.foodKey);
+      return foodNutritionPart(item?.name || "其他食物", item, entry.amount, "base");
+    }),
+  ].filter((part) => part.amount > 0 && (part.kcal > 0 || part.protein > 0 || part.fat > 0 || part.carb > 0));
+}
+
+function macroTopContributors(record, macroKey) {
+  const total = computeRecord(record)[macroKey];
+  const grouped = new Map();
+  recordFoodNutritionParts(record).forEach((part) => {
+    const value = numberValue(part[macroKey], 0);
+    if (value <= 0) return;
+    const current = grouped.get(part.name) || { name: part.name, value: 0 };
+    current.value += value;
+    grouped.set(part.name, current);
+  });
+  return Array.from(grouped.values())
+    .map((item) => ({
+      ...item,
+      percent: total > 0 ? item.value / total * 100 : 0,
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 3);
+}
+
 function otherFoodsNutrition(record) {
   return (record.otherFoods || []).map((entry) => ratioForFood(foodByKey(entry.foodKey), entry.amount, "base"));
 }
@@ -2582,6 +2628,12 @@ function bindChartHoverHandlers() {
     canvas.addEventListener("pointerdown", (event) => updateChartHover(id, event));
     canvas.addEventListener("pointerleave", () => clearChartHover(id));
   });
+  const macroCanvas = document.getElementById("macroChart");
+  if (macroCanvas) {
+    macroCanvas.addEventListener("pointermove", updateMacroHover);
+    macroCanvas.addEventListener("pointerdown", updateMacroHover);
+    macroCanvas.addEventListener("pointerleave", () => clearChartHover("macroChart"));
+  }
 }
 
 function pointerPositionInCanvas(canvas, event) {
@@ -2622,6 +2674,49 @@ function clearChartHover(id) {
   chartHoverState[id] = null;
   if (canvas) canvas.style.cursor = "default";
   scheduleDrawCharts();
+}
+
+function updateMacroHover(event) {
+  const id = "macroChart";
+  let layout = chartLayouts[id];
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  if (!layout) {
+    drawMacroChart();
+    layout = chartLayouts[id];
+  }
+  if (!layout || !canvas) return;
+  const pointer = pointerPositionInCanvas(canvas, event);
+  const dx = pointer.x - layout.centerX;
+  const dy = pointer.y - layout.centerY;
+  const distance = Math.hypot(dx, dy);
+  const innerRadius = Math.max(13, layout.targetRadius * 0.18);
+  const angle = normalizeAngle(Math.atan2(dy, dx));
+  const sector = distance >= innerRadius && distance <= layout.maxRadius * 1.05
+    ? layout.sectors.find((item) => angleInSector(angle, item.start, item.end))
+    : null;
+  const next = sector ? { itemIndex: sector.index, x: pointer.x, y: pointer.y } : null;
+  const current = chartHoverState[id] || null;
+  const changed =
+    current?.itemIndex !== next?.itemIndex ||
+    Math.abs((current?.x || 0) - (next?.x || 0)) > 8 ||
+    Math.abs((current?.y || 0) - (next?.y || 0)) > 8;
+  canvas.style.cursor = next ? "crosshair" : "default";
+  if (!changed) return;
+  chartHoverState[id] = next;
+  scheduleDrawCharts();
+}
+
+function normalizeAngle(angle) {
+  const full = Math.PI * 2;
+  return ((angle % full) + full) % full;
+}
+
+function angleInSector(angle, start, end) {
+  const normalizedStart = normalizeAngle(start);
+  const normalizedEnd = normalizeAngle(end);
+  if (normalizedStart <= normalizedEnd) return angle >= normalizedStart && angle <= normalizedEnd;
+  return angle >= normalizedStart || angle <= normalizedEnd;
 }
 
 function setupCanvas(id) {
@@ -2684,14 +2779,17 @@ function drawMacroChart() {
   if (!setup) return;
   const { ctx, width, height } = setup;
   const latest = dashboardSummary().latest;
-  if (!latest) return drawEmpty(ctx, width, height, "暂无记录");
+  if (!latest) {
+    delete chartLayouts.macroChart;
+    return drawEmpty(ctx, width, height, "暂无记录");
+  }
   const computed = computeRecord(latest);
   const targets = macroTargetValues(latest, computed);
-  drawMacroTargetPie(ctx, width, height, [
-    { label: "蛋白质", color: "#2f7d62", value: computed.protein, target: targets.protein },
-    { label: "脂肪", color: "#d77843", value: computed.fat, target: targets.fat },
-    { label: "碳水", color: "#4f67b1", value: computed.carb, target: targets.carb },
-  ]);
+  chartLayouts.macroChart = drawMacroTargetPie(ctx, width, height, [
+    { label: "蛋白质", macroKey: "protein", color: "#2f7d62", value: computed.protein, target: targets.protein, contributors: macroTopContributors(latest, "protein") },
+    { label: "脂肪", macroKey: "fat", color: "#d77843", value: computed.fat, target: targets.fat, contributors: macroTopContributors(latest, "fat") },
+    { label: "碳水", macroKey: "carb", color: "#4f67b1", value: computed.carb, target: targets.carb, contributors: macroTopContributors(latest, "carb") },
+  ], chartHoverState.macroChart);
 }
 
 function macroTargetValues(record, computed) {
@@ -2900,7 +2998,7 @@ function drawSector(ctx, centerX, centerY, radius, startAngle, endAngle) {
   ctx.closePath();
 }
 
-function drawMacroTargetPie(ctx, width, height, items) {
+function drawMacroTargetPie(ctx, width, height, items, hover = null) {
   ctx.clearRect(0, 0, width, height);
   const centerX = width / 2;
   const targetRadius = Math.min(width * 0.23, height * 0.25, 70);
@@ -2912,6 +3010,12 @@ function drawMacroTargetPie(ctx, width, height, items) {
   const values = items.map((item) => ({
     ...item,
     percent: item.target > 0 ? item.value / item.target * 100 : 0,
+  }));
+  const sectors = values.map((item, index) => ({
+    index,
+    item,
+    start: startBase + segment * index + gap,
+    end: startBase + segment * (index + 1) - gap,
   }));
 
   const glow = ctx.createRadialGradient(centerX, centerY, targetRadius * 0.18, centerX, centerY, maxRadius * 1.18);
@@ -2942,16 +3046,14 @@ function drawMacroTargetPie(ctx, width, height, items) {
   ctx.restore();
 
   values.forEach((item, index) => {
-    const start = startBase + segment * index + gap;
-    const end = startBase + segment * (index + 1) - gap;
+    const { start, end } = sectors[index];
     drawSector(ctx, centerX, centerY, targetRadius, start, end);
     ctx.fillStyle = hexToRGBA(item.color, 0.1);
     ctx.fill();
   });
 
   values.forEach((item, index) => {
-    const start = startBase + segment * index + gap;
-    const end = startBase + segment * (index + 1) - gap;
+    const { start, end } = sectors[index];
     const scale = Math.max(0, Math.min(1.36, item.percent / 100));
     const fillRadius = targetRadius * scale;
     const fill = ctx.createRadialGradient(centerX, centerY, targetRadius * 0.12, centerX, centerY, Math.max(fillRadius, targetRadius * 0.2));
@@ -3004,6 +3106,18 @@ function drawMacroTargetPie(ctx, width, height, items) {
   ctx.font = "650 11px system-ui, sans-serif";
   ctx.fillText("100%", centerX, centerY + 4);
 
+  if (hover && values[hover.itemIndex]) {
+    const sector = sectors[hover.itemIndex];
+    ctx.save();
+    ctx.shadowColor = hexToRGBA(sector.item.color, 0.3);
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = sector.item.color;
+    ctx.lineWidth = 3;
+    drawSector(ctx, centerX, centerY, targetRadius, sector.start, sector.end);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   values.forEach((item, index) => {
     const middle = startBase + segment * index + segment / 2;
     const labelPoint = polygonPoint(centerX, centerY, maxRadius + 20, middle);
@@ -3020,7 +3134,74 @@ function drawMacroTargetPie(ctx, width, height, items) {
     ctx.fillText(`目标 ${fmt(item.target, 0)}g`, labelPoint.x, labelY + 29);
   });
 
+  if (hover && values[hover.itemIndex]) {
+    drawMacroContributorTooltip(ctx, width, height, hover, values[hover.itemIndex]);
+  }
+
   ctx.textAlign = "left";
+  return {
+    centerX,
+    centerY,
+    targetRadius,
+    maxRadius,
+    sectors: sectors.map((sector) => ({
+      index: sector.index,
+      start: sector.start,
+      end: sector.end,
+    })),
+  };
+}
+
+function drawMacroContributorTooltip(ctx, width, height, hover, item) {
+  const rows = item.contributors || [];
+  const rowTexts = rows.length
+    ? rows.map((row, index) => `${index + 1}. ${row.name} ${fmt(row.value, 1)}g · ${fmt(row.percent, 0)}%`)
+    : ["暂无来源"];
+  const title = `${item.label}贡献前三`;
+  ctx.save();
+  ctx.font = "12px system-ui, sans-serif";
+  const measured = [title, ...rowTexts].map((line) => ctx.measureText(line).width);
+  const tooltipW = Math.min(260, Math.max(180, Math.max(...measured) + 30));
+  const tooltipH = 32 + rowTexts.length * 20;
+  let x = hover.x + 14;
+  let y = hover.y - tooltipH - 14;
+  if (x + tooltipW > width - 8) x = hover.x - tooltipW - 14;
+  if (x < 8) x = 8;
+  if (y < 8) y = hover.y + 14;
+  if (y + tooltipH > height - 8) y = height - tooltipH - 8;
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.97)";
+  ctx.strokeStyle = "rgba(217, 224, 218, 0.95)";
+  ctx.lineWidth = 1;
+  ctx.shadowColor = "rgba(31, 43, 35, 0.2)";
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 7;
+  roundRect(ctx, x, y, tooltipW, tooltipH, 8);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.stroke();
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = item.color;
+  ctx.font = "650 12px system-ui, sans-serif";
+  ctx.fillText(title, x + 12, y + 19);
+  rowTexts.forEach((line, index) => {
+    const rowY = y + 39 + index * 20;
+    ctx.fillStyle = index === 0 && rows.length ? "#1d231f" : "#657267";
+    ctx.font = index === 0 && rows.length ? "650 12px system-ui, sans-serif" : "12px system-ui, sans-serif";
+    ctx.fillText(fitCanvasText(ctx, line, tooltipW - 24), x + 12, rowY);
+  });
+  ctx.restore();
+}
+
+function fitCanvasText(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let fitted = text;
+  while (fitted.length > 4 && ctx.measureText(`${fitted}…`).width > maxWidth) {
+    fitted = fitted.slice(0, -1);
+  }
+  return `${fitted}…`;
 }
 
 window.addEventListener("beforeinstallprompt", (event) => {
