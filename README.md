@@ -40,6 +40,20 @@ python -m http.server 4173
 http://localhost:4173
 ```
 
+## 在线访问
+
+项目已配置 GitHub Pages 自动部署。每次推送 `main` 分支后，GitHub Actions 会把 `health-pwa/` 发布到：
+
+```text
+https://miso-soup98.github.io/health_record/
+```
+
+首次使用时，如果页面还没有打开，需要在 GitHub 仓库的 `Settings -> Pages` 中确认 Source 为 `GitHub Actions`。发布后的 PWA 可以在手机、电脑、iPad 上通过同一个 HTTPS 地址访问和安装。
+
+## 跨设备同步
+
+在线发布只负责“多设备都能打开应用”。记录数据默认仍保存在当前浏览器本地；要让手机和电脑看到同一份记录，需要在“设置 -> 数据与云同步”中配置 Supabase，并使用“上传/拉取”同步。
+
 ## 项目状态
 
 这个项目目前还在逐步更新中。短期目标是先完善个人日常记录体验；后续可能继续加入云端部署、跨设备同步、数据导出、趋势分析和更多快捷录入功能。
