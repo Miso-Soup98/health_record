@@ -1,4 +1,4 @@
-name: Deploy PWA to GitHub Pages
+name: Deploy PWA to gh-pages
 
 on:
   push:
@@ -10,34 +10,38 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: gh-pages
+  cancel-in-progress: true
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
+      - name: Prepare site
+        run: |
+          rm -rf "$RUNNER_TEMP/pages"
+          mkdir -p "$RUNNER_TEMP/pages"
+          cp -R health-pwa/. "$RUNNER_TEMP/pages/"
+          touch "$RUNNER_TEMP/pages/.nojekyll"
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: health-pwa
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish gh-pages branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages || true
+          git switch --orphan gh-pages
+          git rm -rf . || true
+          cp -R "$RUNNER_TEMP/pages"/. .
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to publish"
+          else
+            git commit -m "Deploy GitHub Pages"
+            git push --force origin gh-pages
+          fi

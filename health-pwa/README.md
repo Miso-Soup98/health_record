@@ -31,10 +31,10 @@ http://localhost:4173
 
 ## 部署
 
-这个目录是纯静态站点，可直接部署到 Vercel、Cloudflare Pages、Netlify 或 GitHub Pages。当前仓库已配置 GitHub Pages 工作流，推送 `main` 后会自动发布 `health-pwa`，访问地址为：
+这个目录是纯静态站点，可直接部署到 Vercel、Cloudflare Pages、Netlify 或 GitHub Pages。当前仓库已配置 GitHub Pages 工作流，推送 `main` 后会自动把 `health-pwa` 发布到 `gh-pages` 分支，访问地址为：
 
 ```text
 https://miso-soup98.github.io/health_record/
 ```
 
-如果首次发布后页面没有出现，需要在 GitHub 仓库的 `Settings -> Pages` 中把 Source 设为 `GitHub Actions`。发布只负责让多设备打开同一个应用；跨设备共享记录还需要配置上面的 Supabase 云同步。
+如果首次发布后页面没有出现，需要在 GitHub 仓库的 `Settings -> Pages` 中设置：Source 选择 `Deploy from a branch`，Branch 选择 `gh-pages`，Folder 选择 `/ (root)`。发布只负责让多设备打开同一个应用；跨设备共享记录还需要配置上面的 Supabase 云同步。

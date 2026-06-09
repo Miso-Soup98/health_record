@@ -42,13 +42,13 @@ http://localhost:4173
 
 ## 在线访问
 
-项目已配置 GitHub Pages 自动部署。每次推送 `main` 分支后，GitHub Actions 会把 `health-pwa/` 发布到：
+项目已配置 GitHub Pages 自动部署。每次推送 `main` 分支后，GitHub Actions 会把 `health-pwa/` 发布到 `gh-pages` 分支，访问地址为：
 
 ```text
 https://miso-soup98.github.io/health_record/
 ```
 
-首次使用时，如果页面还没有打开，需要在 GitHub 仓库的 `Settings -> Pages` 中确认 Source 为 `GitHub Actions`。发布后的 PWA 可以在手机、电脑、iPad 上通过同一个 HTTPS 地址访问和安装。
+首次使用时，如果页面还没有打开，需要在 GitHub 仓库的 `Settings -> Pages` 中设置：Source 选择 `Deploy from a branch`，Branch 选择 `gh-pages`，Folder 选择 `/ (root)`。发布后的 PWA 可以在手机、电脑、iPad 上通过同一个 HTTPS 地址访问和安装。
 
 ## 跨设备同步
 
