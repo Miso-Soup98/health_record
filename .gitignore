@@ -7,7 +7,9 @@ server.*.log
 tmp/
 temp/
 
+# Local health data exports
+health-record-backup-*.json
+
 # OS files
 Thumbs.db
 .DS_Store
-

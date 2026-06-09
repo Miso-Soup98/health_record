@@ -1,6 +1,8 @@
 "use strict";
 
 const STORAGE_KEY = "health-record-pwa.v1";
+const CLOUD_UPLOAD_DEBOUNCE_MS = 2500;
+const CLOUD_AUTO_PULL_INTERVAL_MS = 60000;
 const DEFAULT_SETTINGS = {
   heightCm: 174,
   bmrKcal: 1700,
@@ -258,6 +260,9 @@ const foodLookupCache = new Map();
 const chartLayouts = {};
 const chartHoverState = {};
 let chartFrame = null;
+let cloudUploadTimer = null;
+let cloudAutoSyncTimer = null;
+let cloudSyncInFlight = false;
 
 const state = loadState();
 
@@ -278,6 +283,10 @@ function loadState() {
       refreshToken: "",
       userId: "",
       lastSyncAt: "",
+      lastRemoteUpdatedAt: "",
+      lastLocalChangeAt: "",
+      pendingUpload: false,
+      lastSyncError: "",
     },
   };
 
@@ -292,15 +301,39 @@ function loadState() {
       foods: Array.isArray(parsed.foods) && parsed.foods.length ? normalizeFoods(parsed.foods) : fallback.foods,
       exercises: Array.isArray(parsed.exercises) && parsed.exercises.length ? normalizeExercises(parsed.exercises) : fallback.exercises,
       records: parsed.records || {},
-      cloud: { ...fallback.cloud, ...(parsed.cloud || {}) },
+      cloud: normalizeCloudState({ ...fallback.cloud, ...(parsed.cloud || {}) }),
     };
   } catch {
     return fallback;
   }
 }
 
-function saveState() {
+function saveState(options = {}) {
+  if (options.dataChanged) {
+    const now = new Date().toISOString();
+    state.cloud.lastLocalChangeAt = now;
+    state.cloud.pendingUpload = true;
+    state.cloud.lastSyncError = "";
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (options.dataChanged) scheduleCloudUpload();
+}
+
+function normalizeCloudState(cloud = {}) {
+  return {
+    supabaseUrl: "",
+    anonKey: "",
+    email: "",
+    accessToken: "",
+    refreshToken: "",
+    userId: "",
+    lastSyncAt: "",
+    lastRemoteUpdatedAt: "",
+    lastLocalChangeAt: "",
+    pendingUpload: false,
+    lastSyncError: "",
+    ...cloud,
+  };
 }
 
 function normalizeSettings(settings = {}) {
@@ -346,6 +379,18 @@ function formatDate(iso) {
   if (!iso) return "-";
   const [year, month, day] = iso.split("-");
   return `${year}.${month}.${day}`;
+}
+
+function formatSyncTime(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function numberValue(value, fallback = 0) {
@@ -1311,6 +1356,13 @@ function renderHistoryItem(record) {
 }
 
 function renderSettingsScreen() {
+  const cloudOnline = Boolean(state.cloud.accessToken);
+  const cloudStatus = cloudOnline ? (state.cloud.pendingUpload ? "待上传" : "自动同步") : "本地模式";
+  const cloudDetail = state.cloud.lastSyncError
+    ? `同步异常：${state.cloud.lastSyncError}`
+    : cloudOnline
+      ? `登录后自动同步；本机修改后自动上传，每 1 分钟检查云端更新${state.cloud.lastSyncAt ? ` · 上次 ${formatSyncTime(state.cloud.lastSyncAt)}` : ""}`
+      : "登录后会先拉取云端最新记录；之后本机修改会自动上传，每 1 分钟检查其他设备更新";
   return `
     <main class="screen">
       <section class="panel">
@@ -1485,10 +1537,11 @@ function renderSettingsScreen() {
         <div class="panel-header">
           <div>
             <h2 class="panel-title">数据与云同步</h2>
-            <p class="panel-subtitle">本地可离线使用，Supabase 可选开启跨设备同步</p>
+            <p class="panel-subtitle">本地可离线使用，Supabase 登录后自动跨设备同步</p>
           </div>
-          <span class="status-pill ${state.cloud.accessToken ? "online" : "offline"}"><span class="status-dot"></span>${state.cloud.accessToken ? "已登录" : "本地模式"}</span>
+          <span class="status-pill ${cloudOnline ? "online" : "offline"}"><span class="status-dot"></span>${cloudStatus}</span>
         </div>
+        <p class="sync-hint">${escapeHTML(cloudDetail)}</p>
         <div class="button-row" style="margin-bottom: 14px;">
           <button class="text-button" data-action="export-json">${icon("download")}导出备份</button>
           <label class="text-button" for="importFile">${icon("upload")}导入备份</label>
@@ -1515,8 +1568,8 @@ function renderSettingsScreen() {
             <div class="button-row">
               <button type="button" class="text-button" data-action="cloud-signup">${icon("cloud")}注册</button>
               <button type="button" class="primary-button" data-action="cloud-login">${icon("cloud")}登录</button>
-              <button type="button" class="text-button" data-action="cloud-upload">${icon("upload")}上传</button>
-              <button type="button" class="text-button" data-action="cloud-pull">${icon("download")}拉取</button>
+              <button type="button" class="text-button" data-action="cloud-upload">${icon("upload")}立即上传</button>
+              <button type="button" class="text-button" data-action="cloud-pull">${icon("download")}立即拉取</button>
             </div>
           </div>
         </form>
@@ -2174,7 +2227,7 @@ function saveRecordFromForm(form) {
     state.settings.currentWeightKg = numberValue(record.weightKg);
   }
   state.selectedDate = date;
-  saveState();
+  saveState({ dataChanged: true });
   showToast("记录已保存");
   render();
 }
@@ -2188,7 +2241,7 @@ function saveSettings(form) {
   state.settings.macroGoalMode = MACRO_GOAL_MODES.some((mode) => mode.value === macroGoalMode)
     ? macroGoalMode
     : DEFAULT_SETTINGS.macroGoalMode;
-  saveState();
+  saveState({ dataChanged: true });
   showToast("参数已保存");
   render();
 }
@@ -2208,7 +2261,7 @@ function saveFoodsFromTable() {
     ...item,
     unit: `${item.baseAmount}${item.unitLabel}`,
   }));
-  saveState();
+  saveState({ dataChanged: true });
   showToast("食品库已保存");
   render();
 }
@@ -2278,7 +2331,7 @@ async function addFoodFromForm(form) {
       custom: true,
     }),
   );
-  saveState();
+  saveState({ dataChanged: true });
   resetFoodLookupState();
   const extra = lookupResults.length > 1 ? `，另有 ${lookupResults.length - 1} 个候选可参考` : "";
   showToast(lookup ? `新食品已添加，营养数据来自 ${lookup.sourceLabel}${extra}` : "新食品已添加");
@@ -2294,7 +2347,7 @@ function deleteFood(index) {
     : `删除“${item.name}”？`;
   if (!window.confirm(message)) return;
   state.foods.splice(index, 1);
-  saveState();
+  saveState({ dataChanged: true });
   showToast("食品已删除");
   render();
 }
@@ -2311,7 +2364,7 @@ function saveExercisesFromTable() {
     }
   });
   state.exercises = normalizeExercises(state.exercises);
-  saveState();
+  saveState({ dataChanged: true });
   showToast("运动库已保存");
   render();
 }
@@ -2332,7 +2385,7 @@ function addExerciseFromForm(form) {
       custom: true,
     }),
   );
-  saveState();
+  saveState({ dataChanged: true });
   showToast("新运动已添加");
   render();
 }
@@ -2346,7 +2399,7 @@ function deleteExercise(index) {
     : `删除“${item.name}”？`;
   if (!window.confirm(message)) return;
   state.exercises.splice(index, 1);
-  saveState();
+  saveState({ dataChanged: true });
   showToast("运动已删除");
   render();
 }
@@ -2356,7 +2409,7 @@ function deleteRecord(date = state.selectedDate) {
   const ok = window.confirm(`删除 ${formatDate(date)} 的记录？`);
   if (!ok) return;
   delete state.records[date];
-  saveState();
+  saveState({ dataChanged: true });
   showToast("记录已删除");
   render();
 }
@@ -2419,14 +2472,14 @@ function handleAction(action) {
     if (!window.confirm("恢复默认会删除你新增的食品，并重置食品库营养值。确定继续？")) return;
     state.foods = structuredCloneSafe(DEFAULT_FOODS);
     state.foods = normalizeFoods(state.foods);
-    saveState();
+    saveState({ dataChanged: true });
     showToast("食品库已恢复");
     render();
   }
   if (action === "reset-exercises") {
     if (!window.confirm("恢复默认会删除你新增的运动，并重置运动库 MET。确定继续？")) return;
     state.exercises = normalizeExercises(DEFAULT_EXERCISES);
-    saveState();
+    saveState({ dataChanged: true });
     showToast("运动库已恢复");
     render();
   }
@@ -2470,7 +2523,7 @@ async function importJSON(event) {
     state.foods = Array.isArray(data.foods) ? normalizeFoods(data.foods) : state.foods;
     state.exercises = Array.isArray(data.exercises) ? normalizeExercises(data.exercises) : state.exercises;
     state.records = data.records;
-    saveState();
+    saveState({ dataChanged: true });
     showToast("备份已导入");
     render();
   } catch {
@@ -2486,6 +2539,91 @@ async function installApp() {
   installPrompt.prompt();
   await installPrompt.userChoice;
   installPrompt = null;
+}
+
+function cloudDataPayload() {
+  return {
+    settings: state.settings,
+    foods: state.foods,
+    exercises: state.exercises,
+    records: state.records,
+  };
+}
+
+function hasLocalHealthData() {
+  return (
+    Object.keys(state.records || {}).length > 0 ||
+    state.foods.some((item) => item.custom) ||
+    state.exercises.some((item) => item.custom)
+  );
+}
+
+function applyCloudData(data, remoteUpdatedAt = "") {
+  state.settings = normalizeSettings({ ...state.settings, ...(data.settings || {}) });
+  state.foods = Array.isArray(data.foods) ? normalizeFoods(data.foods) : state.foods;
+  state.exercises = Array.isArray(data.exercises) ? normalizeExercises(data.exercises) : state.exercises;
+  state.records = data.records || state.records;
+  state.cloud.pendingUpload = false;
+  state.cloud.lastSyncAt = new Date().toISOString();
+  state.cloud.lastRemoteUpdatedAt = remoteUpdatedAt || state.cloud.lastSyncAt;
+  state.cloud.lastSyncError = "";
+}
+
+function isCloudConfigured() {
+  return Boolean(state.cloud.supabaseUrl && state.cloud.anonKey && state.cloud.accessToken && state.cloud.userId);
+}
+
+function isEditingDataForm() {
+  const active = document.activeElement;
+  if (!active) return false;
+  return Boolean(active.closest("#recordForm, #settingsForm, #addFoodForm, #addExerciseForm, #cloudForm"));
+}
+
+function scheduleCloudUpload() {
+  clearTimeout(cloudUploadTimer);
+  if (!isCloudConfigured()) return;
+  cloudUploadTimer = setTimeout(() => {
+    cloudUpload({ silent: true });
+  }, CLOUD_UPLOAD_DEBOUNCE_MS);
+}
+
+function startCloudAutoSync() {
+  clearInterval(cloudAutoSyncTimer);
+  if (!isCloudConfigured()) return;
+  cloudAutoSyncTimer = setInterval(cloudAutoSyncTick, CLOUD_AUTO_PULL_INTERVAL_MS);
+}
+
+async function cloudAutoSyncTick() {
+  if (!isCloudConfigured() || document.hidden || cloudSyncInFlight) return;
+  if (state.cloud.pendingUpload) {
+    await cloudUpload({ silent: true });
+    return;
+  }
+  if (isEditingDataForm()) return;
+  try {
+    const row = await fetchCloudRow();
+    if (!row?.data) return;
+    const remoteUpdatedAt = row.updated_at || "";
+    const knownRemote = state.cloud.lastRemoteUpdatedAt || state.cloud.lastSyncAt || "";
+    if (remoteUpdatedAt && knownRemote && new Date(remoteUpdatedAt) <= new Date(knownRemote)) {
+      state.cloud.lastSyncAt = new Date().toISOString();
+      state.cloud.lastSyncError = "";
+      saveState();
+      return;
+    }
+    applyCloudData(row.data, remoteUpdatedAt);
+    saveState();
+    render();
+  } catch (error) {
+    state.cloud.lastSyncError = error.message || "自动同步失败";
+    saveState();
+  }
+}
+
+async function fetchCloudRow() {
+  if (!state.cloud.userId) return null;
+  const rows = await cloudFetch(`/rest/v1/health_app_state?select=data,updated_at&user_id=eq.${encodeURIComponent(state.cloud.userId)}`);
+  return rows?.[0] || null;
 }
 
 function getCloudFormValues() {
@@ -2504,21 +2642,50 @@ function getCloudFormValues() {
 }
 
 async function cloudFetch(path, options = {}) {
+  const { retryAuth = true, ...fetchOptions } = options;
   const { supabaseUrl, anonKey, accessToken } = state.cloud;
   if (!supabaseUrl || !anonKey) throw new Error("Supabase 尚未配置");
   const headers = {
     apikey: anonKey,
     "Content-Type": "application/json",
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    ...(options.headers || {}),
+    ...(fetchOptions.headers || {}),
   };
-  const response = await fetch(`${supabaseUrl}${path}`, { ...options, headers });
+  const response = await fetch(`${supabaseUrl}${path}`, { ...fetchOptions, headers });
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = text;
+  }
+  if (response.status === 401 && retryAuth && state.cloud.refreshToken) {
+    await cloudRefreshSession();
+    return cloudFetch(path, { ...options, retryAuth: false });
+  }
   if (!response.ok) {
     throw new Error(payload?.msg || payload?.message || `请求失败 ${response.status}`);
   }
   return payload;
+}
+
+async function cloudRefreshSession() {
+  const { supabaseUrl, anonKey, refreshToken } = state.cloud;
+  if (!supabaseUrl || !anonKey || !refreshToken) throw new Error("登录已过期，请重新登录");
+  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: anonKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.msg || payload.message || "登录已过期，请重新登录");
+  Object.assign(state.cloud, {
+    accessToken: payload.access_token,
+    refreshToken: payload.refresh_token || refreshToken,
+    userId: payload.user?.id || state.cloud.userId,
+    lastSyncError: "",
+  });
+  saveState();
 }
 
 async function cloudSignup() {
@@ -2551,57 +2718,86 @@ async function cloudLogin() {
       accessToken: payload.access_token,
       refreshToken: payload.refresh_token,
       userId: payload.user?.id || "",
+      lastSyncError: "",
     });
     saveState();
-    showToast("云同步已登录");
+    startCloudAutoSync();
+    await cloudInitialSync();
+    showToast("云同步已登录，自动同步已开启");
     render();
   } catch (error) {
     showToast(error.message);
   }
 }
 
-async function cloudUpload() {
+async function cloudInitialSync() {
+  const row = await fetchCloudRow();
+  if (!row?.data) {
+    if (hasLocalHealthData()) await cloudUpload({ silent: true });
+    return;
+  }
+  const remoteUpdatedAt = row.updated_at || "";
+  const localChangedAt = state.cloud.lastLocalChangeAt || "";
+  if (state.cloud.pendingUpload && localChangedAt && (!remoteUpdatedAt || new Date(localChangedAt) >= new Date(remoteUpdatedAt))) {
+    await cloudUpload({ silent: true });
+    return;
+  }
+  applyCloudData(row.data, remoteUpdatedAt);
+  saveState();
+}
+
+async function cloudUpload(options = {}) {
+  const { silent = false } = options;
   try {
     if (!state.cloud.accessToken || !state.cloud.userId) throw new Error("请先登录云同步");
+    if (cloudSyncInFlight) return;
+    cloudSyncInFlight = true;
+    const now = new Date().toISOString();
     await cloudFetch("/rest/v1/health_app_state?on_conflict=user_id", {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify({
         user_id: state.cloud.userId,
-        data: {
-          settings: state.settings,
-          foods: state.foods,
-          exercises: state.exercises,
-          records: state.records,
-        },
-        updated_at: new Date().toISOString(),
+        data: cloudDataPayload(),
+        updated_at: now,
       }),
     });
-    state.cloud.lastSyncAt = new Date().toISOString();
+    state.cloud.lastSyncAt = now;
+    state.cloud.lastRemoteUpdatedAt = now;
+    state.cloud.pendingUpload = false;
+    state.cloud.lastSyncError = "";
     saveState();
-    showToast("已上传到 Supabase");
-    render();
+    if (!silent) {
+      showToast("已上传到 Supabase");
+      render();
+    }
   } catch (error) {
-    showToast(error.message);
+    state.cloud.lastSyncError = error.message || "上传失败";
+    saveState();
+    if (!silent) showToast(error.message);
+  } finally {
+    cloudSyncInFlight = false;
   }
 }
 
-async function cloudPull() {
+async function cloudPull(options = {}) {
+  const { silent = false } = options;
   try {
     if (!state.cloud.accessToken || !state.cloud.userId) throw new Error("请先登录云同步");
-    const rows = await cloudFetch(`/rest/v1/health_app_state?select=data&user_id=eq.${encodeURIComponent(state.cloud.userId)}`);
-    const data = rows?.[0]?.data;
-    if (!data) throw new Error("云端暂无数据，可先上传一次");
-    state.settings = normalizeSettings({ ...state.settings, ...(data.settings || {}) });
-    state.foods = Array.isArray(data.foods) ? normalizeFoods(data.foods) : state.foods;
-    state.exercises = Array.isArray(data.exercises) ? normalizeExercises(data.exercises) : state.exercises;
-    state.records = data.records || state.records;
-    state.cloud.lastSyncAt = new Date().toISOString();
+    if (cloudSyncInFlight) return;
+    cloudSyncInFlight = true;
+    const row = await fetchCloudRow();
+    if (!row?.data) throw new Error("云端暂无数据，可先上传一次");
+    applyCloudData(row.data, row.updated_at || "");
     saveState();
-    showToast("已从 Supabase 拉取");
+    if (!silent) showToast("已从 Supabase 拉取");
     render();
   } catch (error) {
-    showToast(error.message);
+    state.cloud.lastSyncError = error.message || "拉取失败";
+    saveState();
+    if (!silent) showToast(error.message);
+  } finally {
+    cloudSyncInFlight = false;
   }
 }
 
@@ -3213,6 +3409,14 @@ window.addEventListener("resize", () => {
   requestAnimationFrame(drawCharts);
 });
 
+window.addEventListener("online", () => {
+  cloudAutoSyncTick();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) cloudAutoSyncTick();
+});
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./service-worker.js").catch(() => {});
@@ -3220,3 +3424,6 @@ if ("serviceWorker" in navigator) {
 }
 
 render();
+startCloudAutoSync();
+if (state.cloud.pendingUpload) scheduleCloudUpload();
+setTimeout(cloudAutoSyncTick, 2000);
