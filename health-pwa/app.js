@@ -3,6 +3,8 @@
 const STORAGE_KEY = "health-record-pwa.v1";
 const CLOUD_UPLOAD_DEBOUNCE_MS = 2500;
 const CLOUD_AUTO_PULL_INTERVAL_MS = 60000;
+const DEFAULT_SUPABASE_URL = "https://mrllowcogcsgbsvxgshx.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_wOFcTdR2NroXxOOpkbYLzA_2I3-pGN6";
 const DEFAULT_SETTINGS = {
   heightCm: 174,
   bmrKcal: 1700,
@@ -276,8 +278,8 @@ function loadState() {
     exercises: normalizeExercises(DEFAULT_EXERCISES),
     records: {},
     cloud: {
-      supabaseUrl: "",
-      anonKey: "",
+      supabaseUrl: DEFAULT_SUPABASE_URL,
+      anonKey: DEFAULT_SUPABASE_ANON_KEY,
       email: "",
       accessToken: "",
       refreshToken: "",
@@ -320,9 +322,9 @@ function saveState(options = {}) {
 }
 
 function normalizeCloudState(cloud = {}) {
-  return {
-    supabaseUrl: "",
-    anonKey: "",
+  const next = {
+    supabaseUrl: DEFAULT_SUPABASE_URL,
+    anonKey: DEFAULT_SUPABASE_ANON_KEY,
     email: "",
     accessToken: "",
     refreshToken: "",
@@ -334,6 +336,16 @@ function normalizeCloudState(cloud = {}) {
     lastSyncError: "",
     ...cloud,
   };
+  next.supabaseUrl = normalizeSupabaseUrl(next.supabaseUrl) || DEFAULT_SUPABASE_URL;
+  next.anonKey = String(next.anonKey || DEFAULT_SUPABASE_ANON_KEY);
+  return next;
+}
+
+function normalizeSupabaseUrl(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\/rest\/v1\/?$/, "")
+    .replace(/\/$/, "");
 }
 
 function normalizeSettings(settings = {}) {
@@ -1362,7 +1374,7 @@ function renderSettingsScreen() {
     ? `同步异常：${state.cloud.lastSyncError}`
     : cloudOnline
       ? `登录后自动同步；本机修改后自动上传，每 1 分钟检查云端更新${state.cloud.lastSyncAt ? ` · 上次 ${formatSyncTime(state.cloud.lastSyncAt)}` : ""}`
-      : "登录后会先拉取云端最新记录；之后本机修改会自动上传，每 1 分钟检查其他设备更新";
+      : "输入邮箱和密码登录；之后本机修改会自动上传，每 1 分钟检查其他设备更新";
   return `
     <main class="screen">
       <section class="panel">
@@ -1548,14 +1560,6 @@ function renderSettingsScreen() {
           <input id="importFile" class="sr-only" type="file" accept="application/json" />
         </div>
         <form id="cloudForm" class="form-grid">
-          <div class="field full">
-            <label for="supabaseUrl">Supabase URL</label>
-            <input id="supabaseUrl" name="supabaseUrl" value="${escapeHTML(state.cloud.supabaseUrl)}" placeholder="https://xxxx.supabase.co" />
-          </div>
-          <div class="field full">
-            <label for="anonKey">Anon Key</label>
-            <input id="anonKey" name="anonKey" value="${escapeHTML(state.cloud.anonKey)}" />
-          </div>
           <div class="field">
             <label for="cloudEmail">邮箱</label>
             <input id="cloudEmail" name="email" type="email" value="${escapeHTML(state.cloud.email)}" />
@@ -2629,14 +2633,14 @@ async function fetchCloudRow() {
 function getCloudFormValues() {
   const form = document.getElementById("cloudForm");
   const data = new FormData(form);
-  const supabaseUrl = String(data.get("supabaseUrl") || "").replace(/\/$/, "");
-  const anonKey = String(data.get("anonKey") || "");
+  const supabaseUrl = normalizeSupabaseUrl(data.get("supabaseUrl") || state.cloud.supabaseUrl || DEFAULT_SUPABASE_URL) || DEFAULT_SUPABASE_URL;
+  const anonKey = String(data.get("anonKey") || state.cloud.anonKey || DEFAULT_SUPABASE_ANON_KEY);
   const email = String(data.get("email") || "");
   const password = String(data.get("password") || "");
   Object.assign(state.cloud, { supabaseUrl, anonKey, email });
   saveState();
   if (!supabaseUrl || !anonKey || !email || !password) {
-    throw new Error("请先填写 Supabase URL、Anon Key、邮箱和密码");
+    throw new Error("请先填写邮箱和密码");
   }
   return { supabaseUrl, anonKey, email, password };
 }

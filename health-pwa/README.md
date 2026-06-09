@@ -26,7 +26,7 @@ http://localhost:4173
 
 1. 创建一个 Supabase 项目。
 2. 在 Supabase SQL Editor 运行 `supabase-schema.sql`。
-3. 在应用的“设置”页填入 Supabase URL、Anon Key、邮箱和密码。
+3. 当前项目已内置 Supabase URL 和 Publishable Key，应用的“设置”页只需要填邮箱和密码。
 4. 注册/登录后会自动拉取云端数据，本机保存后会自动上传，并每 1 分钟检查其他设备更新；“立即上传”和“立即拉取”保留为兜底操作。
 
 ## 部署
