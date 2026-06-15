@@ -265,6 +265,8 @@ let chartFrame = null;
 let cloudUploadTimer = null;
 let cloudAutoSyncTimer = null;
 let cloudSyncInFlight = false;
+let foodTableSaveTimer = null;
+let exerciseTableSaveTimer = null;
 
 const state = loadState();
 
@@ -1427,7 +1429,7 @@ function renderSettingsScreen() {
                         ${
                           item.custom
                             ? `<button type="button" class="icon-button table-action" data-delete-exercise="${index}" title="删除运动" aria-label="删除运动">${icon("trash")}</button>`
-                            : `<span class="status-pill">默认</span>`
+                            : `<span class="status-pill" title="默认项可编辑，不可删除">默认·可编辑</span>`
                         }
                       </td>
                     </tr>
@@ -1492,7 +1494,7 @@ function renderSettingsScreen() {
                         ${
                           item.custom
                             ? `<button type="button" class="icon-button table-action" data-delete-food="${index}" title="删除食品" aria-label="删除食品">${icon("trash")}</button>`
-                            : `<span class="status-pill">默认</span>`
+                            : `<span class="status-pill" title="默认项可编辑，不可删除">默认·可编辑</span>`
                         }
                       </td>
                     </tr>
@@ -2149,6 +2151,16 @@ function bindCurrentScreen() {
   if (importFile) {
     importFile.addEventListener("change", importJSON);
   }
+
+  document.querySelectorAll("[data-food][data-prop]").forEach((input) => {
+    input.addEventListener("input", scheduleFoodTableAutosave);
+    input.addEventListener("change", () => saveFoodsFromTable({ silent: true, rerender: false }));
+  });
+
+  document.querySelectorAll("[data-exercise][data-prop]").forEach((input) => {
+    input.addEventListener("input", scheduleExerciseTableAutosave);
+    input.addEventListener("change", () => saveExercisesFromTable({ silent: true, rerender: false }));
+  });
 }
 
 let previewTimer = null;
@@ -2250,7 +2262,18 @@ function saveSettings(form) {
   render();
 }
 
-function saveFoodsFromTable() {
+function scheduleFoodTableAutosave() {
+  clearTimeout(foodTableSaveTimer);
+  foodTableSaveTimer = setTimeout(() => saveFoodsFromTable({ silent: true, rerender: false }), 900);
+}
+
+function scheduleExerciseTableAutosave() {
+  clearTimeout(exerciseTableSaveTimer);
+  exerciseTableSaveTimer = setTimeout(() => saveExercisesFromTable({ silent: true, rerender: false }), 900);
+}
+
+function saveFoodsFromTable(options = {}) {
+  const { silent = false, rerender = true } = options;
   document.querySelectorAll("[data-food][data-prop]").forEach((input) => {
     const index = Number(input.dataset.food);
     const prop = input.dataset.prop;
@@ -2266,8 +2289,8 @@ function saveFoodsFromTable() {
     unit: `${item.baseAmount}${item.unitLabel}`,
   }));
   saveState({ dataChanged: true });
-  showToast("食品库已保存");
-  render();
+  if (!silent) showToast("食品库已保存");
+  if (rerender) render();
 }
 
 async function addFoodFromForm(form) {
@@ -2356,7 +2379,8 @@ function deleteFood(index) {
   render();
 }
 
-function saveExercisesFromTable() {
+function saveExercisesFromTable(options = {}) {
+  const { silent = false, rerender = true } = options;
   document.querySelectorAll("[data-exercise][data-prop]").forEach((input) => {
     const index = Number(input.dataset.exercise);
     const prop = input.dataset.prop;
@@ -2369,8 +2393,8 @@ function saveExercisesFromTable() {
   });
   state.exercises = normalizeExercises(state.exercises);
   saveState({ dataChanged: true });
-  showToast("运动库已保存");
-  render();
+  if (!silent) showToast("运动库已保存");
+  if (rerender) render();
 }
 
 function addExerciseFromForm(form) {
