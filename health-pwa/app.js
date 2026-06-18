@@ -2991,9 +2991,9 @@ function drawEnergyChart() {
   const burn = records.map((record) => computeRecord(record).totalBurn);
   const net = records.map((record) => computeRecord(record).netKcal);
   chartLayouts.energyChart = drawMultiLine(ctx, width, height, labels, [
-    { label: "摄入", color: "#2f7d62", values: intake, unit: "kcal", digits: 0 },
-    { label: "消耗", color: "#d77843", values: burn, unit: "kcal", digits: 0 },
-    { label: "净热量", color: "#4f67b1", values: net, unit: "kcal", digits: 0 },
+    { label: "摄入", color: "#2f7d62", values: intake, unit: "kcal", digits: 0, axisDigits: 0 },
+    { label: "消耗", color: "#d77843", values: burn, unit: "kcal", digits: 0, axisDigits: 0 },
+    { label: "净热量", color: "#4f67b1", values: net, unit: "kcal", digits: 0, axisDigits: 0 },
   ], chartHoverState.energyChart);
 }
 
@@ -3010,8 +3010,8 @@ function drawWeightChart() {
     return average(nearby);
   });
   chartLayouts.weightChart = drawMultiLine(ctx, width, height, labels, [
-    { label: "体重", color: "#4f67b1", values: weights, unit: "kg", digits: 1 },
-    { label: "7日均重", color: "#2f7d62", values: rolling, unit: "kg", digits: 1 },
+    { label: "体重", color: "#4f67b1", values: weights, unit: "kg", digits: 1, axisDigits: 1 },
+    { label: "7日均重", color: "#2f7d62", values: rolling, unit: "kg", digits: 1, axisDigits: 1 },
   ], chartHoverState.weightChart);
 }
 
@@ -3047,12 +3047,14 @@ function drawMultiLine(ctx, width, height, labels, series, hover = null) {
   const pad = { top: 28, right: 18, bottom: 42, left: 48 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
+  const axisDigits = Math.max(0, ...series.map((item) => numberValue(item.axisDigits, 0)));
   const values = series.flatMap((item) => item.values).filter((value) => Number.isFinite(value));
   let min = Math.min(...values);
   let max = Math.max(...values);
   if (min === max) {
-    min -= 100;
-    max += 100;
+    const equalValuePadding = axisDigits > 0 ? 1 : 100;
+    min -= equalValuePadding;
+    max += equalValuePadding;
   }
   const span = max - min;
   min -= span * 0.12;
@@ -3071,7 +3073,7 @@ function drawMultiLine(ctx, width, height, labels, series, hover = null) {
     ctx.lineTo(width - pad.right, y);
     ctx.stroke();
     const value = max - ((max - min) / 4) * i;
-    ctx.fillText(fmt(value), 6, y + 4);
+    ctx.fillText(fmt(value, axisDigits), 6, y + 4);
   }
 
   const xFor = (index) => pad.left + (labels.length === 1 ? plotW / 2 : (plotW / (labels.length - 1)) * index);
