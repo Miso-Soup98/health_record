@@ -269,12 +269,15 @@ let foodTableSaveTimer = null;
 let exerciseTableSaveTimer = null;
 
 const state = loadState();
+rollSelectedDateToToday();
 
 function loadState() {
+  const today = localISODate();
   const fallback = {
     version: 1,
     activeTab: "dashboard",
-    selectedDate: localISODate(),
+    selectedDate: today,
+    lastOpenedDate: today,
     settings: { ...DEFAULT_SETTINGS },
     foods: normalizeFoods(DEFAULT_FOODS),
     exercises: normalizeExercises(DEFAULT_EXERCISES),
@@ -310,6 +313,20 @@ function loadState() {
   } catch {
     return fallback;
   }
+}
+
+function rollSelectedDateToToday(options = {}) {
+  const today = localISODate();
+  if (state.lastOpenedDate === today) return false;
+  const shouldResetDate = state.selectedDate !== today;
+  state.lastOpenedDate = today;
+  if (shouldResetDate) {
+    state.selectedDate = today;
+    draftOverride = null;
+  }
+  saveState();
+  if (shouldResetDate && options.renderIfChanged) render();
+  return shouldResetDate;
 }
 
 function saveState(options = {}) {
@@ -3442,7 +3459,10 @@ window.addEventListener("online", () => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) cloudAutoSyncTick();
+  if (!document.hidden) {
+    if (!isEditingDataForm()) rollSelectedDateToToday({ renderIfChanged: true });
+    cloudAutoSyncTick();
+  }
 });
 
 if ("serviceWorker" in navigator) {
