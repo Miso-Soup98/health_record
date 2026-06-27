@@ -64,6 +64,7 @@ const DEFAULT_FOODS = [
   { key: "yogurt", name: "森永ビヒダスプレーンヨーグルト", unit: "100g", kcal: 65, protein: 3.7, fat: 3.1, carb: 5.5, category: "乳制品" },
   { key: "oatmeal", name: "日食プレミアムピュアオートミール", unit: "30g", kcal: 111, protein: 4.4, fat: 2, carb: 20.6, category: "主食/谷物" },
   { key: "rice", name: "微波炉米饭", unit: "1份", kcal: 222, protein: 3.8, fat: 0.6, carb: 48, category: "主食" },
+  { key: "potato", name: "土豆（生，水煮或蒸）", unit: "100g", kcal: 77, protein: 2, fat: 0.1, carb: 17.5, category: "主食/谷物" },
   { key: "konjac", name: "魔芋丝", unit: "100g", kcal: 8, protein: 0.2, fat: 0, carb: 3.5, category: "低热量" },
   { key: "vegetables", name: "白菜蘑菇等蔬菜", unit: "100g", kcal: 25, protein: 1.6, fat: 0.2, carb: 5, category: "蔬菜" },
   { key: "banana", name: "香蕉", unit: "1根", kcal: 90, protein: 1.1, fat: 0.2, carb: 23, category: "水果/碳水" },
@@ -462,7 +463,12 @@ function normalizeFood(item) {
 }
 
 function normalizeFoods(foods) {
-  return structuredCloneSafe(foods).map(normalizeFood);
+  const normalized = structuredCloneSafe(foods).map(normalizeFood);
+  const existingKeys = new Set(normalized.map((item) => item.key));
+  DEFAULT_FOODS.forEach((item) => {
+    if (!existingKeys.has(item.key)) normalized.push(normalizeFood(item));
+  });
+  return normalized;
 }
 
 function normalizeExercise(item) {
@@ -572,6 +578,7 @@ function defaultRecordForDate(date) {
     yogurtG: 400,
     oatmealG: 30,
     riceServings: 1,
+    potatoG: 0,
     konjacG: 150,
     vegetablesG: 250,
     meatKey: meatCycle[day],
@@ -652,6 +659,7 @@ function recordFoodNutritionParts(record) {
     foodNutritionPart("酸奶", foodByKey("yogurt"), record.yogurtG, "per100"),
     foodNutritionPart("麦片", foodByKey("oatmeal"), record.oatmealG, "per30"),
     foodNutritionPart("米饭", foodByKey("rice"), record.riceServings, "unit"),
+    foodNutritionPart("土豆", foodByKey("potato"), record.potatoG, "per100"),
     foodNutritionPart("魔芋丝", foodByKey("konjac"), record.konjacG, "per100"),
     foodNutritionPart("蔬菜", foodByKey("vegetables"), record.vegetablesG, "per100"),
     foodNutritionPart(meat?.name || "肉类", meat, record.meatG, "per100"),
@@ -715,6 +723,7 @@ function computeRecord(record) {
     ratioForFood(foodByKey("yogurt"), record.yogurtG, "per100"),
     ratioForFood(foodByKey("oatmeal"), record.oatmealG, "per30"),
     ratioForFood(foodByKey("rice"), record.riceServings, "unit"),
+    ratioForFood(foodByKey("potato"), record.potatoG, "per100"),
     ratioForFood(foodByKey("konjac"), record.konjacG, "per100"),
     ratioForFood(foodByKey("vegetables"), record.vegetablesG, "per100"),
     ratioForFood(foodByKey(record.meatKey), record.meatG, "per100"),
@@ -1186,6 +1195,7 @@ function renderRecordScreen() {
             ${inputField("yogurtG", "酸奶 g", record.yogurtG)}
             ${inputField("oatmealG", "麦片 g", record.oatmealG)}
             ${inputField("riceServings", "米饭 份", record.riceServings)}
+            ${inputField("potatoG", "土豆 g", record.potatoG)}
             ${inputField("konjacG", "魔芋丝 g", record.konjacG)}
             ${inputField("vegetablesG", "蔬菜 g", record.vegetablesG)}
             <div class="field">
@@ -2218,6 +2228,7 @@ function formToRecord(form, date) {
     yogurtG: numberValue(data.get("yogurtG")),
     oatmealG: numberValue(data.get("oatmealG")),
     riceServings: numberValue(data.get("riceServings")),
+    potatoG: numberValue(data.get("potatoG")),
     konjacG: numberValue(data.get("konjacG")),
     vegetablesG: numberValue(data.get("vegetablesG")),
     meatKey: String(data.get("meatKey") || "chickenBreast"),
