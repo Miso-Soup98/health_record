@@ -1,8 +1,9 @@
 "use strict";
 
 const STORAGE_KEY = "health-record-pwa.v1";
-const CLOUD_UPLOAD_DEBOUNCE_MS = 2500;
-const CLOUD_AUTO_PULL_INTERVAL_MS = 60000;
+const CLOUD_UPLOAD_DEBOUNCE_MS = 800;
+const CLOUD_AUTO_PULL_INTERVAL_MS = 15000;
+const CLOUD_BOOT_SYNC_TIMEOUT_MS = 10000;
 const DEFAULT_SUPABASE_URL = "https://mrllowcogcsgbsvxgshx.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_wOFcTdR2NroXxOOpkbYLzA_2I3-pGN6";
 const DEFAULT_SETTINGS = {
@@ -266,6 +267,7 @@ let chartFrame = null;
 let cloudUploadTimer = null;
 let cloudAutoSyncTimer = null;
 let cloudSyncInFlight = false;
+let cloudBootSyncPromise = null;
 let foodTableSaveTimer = null;
 let exerciseTableSaveTimer = null;
 
@@ -847,6 +849,18 @@ function render() {
   requestAnimationFrame(drawCharts);
 }
 
+function renderBootSyncScreen(message = "正在同步最新数据") {
+  app.innerHTML = `
+    <div class="boot-sync">
+      <div class="boot-sync-mark">${icon("cloud")}</div>
+      <div>
+        <h1>健康记录</h1>
+        <p>${escapeHTML(message)}</p>
+      </div>
+    </div>
+  `;
+}
+
 function renderTopbar() {
   const summary = dashboardSummary();
   const latest = summary.latest;
@@ -1411,8 +1425,8 @@ function renderSettingsScreen() {
   const cloudDetail = state.cloud.lastSyncError
     ? `同步异常：${state.cloud.lastSyncError}`
     : cloudOnline
-      ? `登录后自动同步；本机修改后自动上传，每 1 分钟检查云端更新${state.cloud.lastSyncAt ? ` · 上次 ${formatSyncTime(state.cloud.lastSyncAt)}` : ""}`
-      : "输入邮箱和密码登录；之后本机修改会自动上传，每 1 分钟检查其他设备更新";
+      ? `登录后自动同步；本机修改后自动上传，每 15 秒检查云端更新${state.cloud.lastSyncAt ? ` · 上次 ${formatSyncTime(state.cloud.lastSyncAt)}` : ""}`
+      : "输入邮箱和密码登录；之后本机修改会自动上传，每 15 秒检查其他设备更新";
   return `
     <main class="screen">
       <section class="panel">
@@ -2766,8 +2780,42 @@ function startCloudAutoSync() {
   cloudAutoSyncTimer = setInterval(cloudAutoSyncTick, CLOUD_AUTO_PULL_INTERVAL_MS);
 }
 
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+  let timeoutId = null;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+async function bootApp() {
+  if (isCloudConfigured()) {
+    renderBootSyncScreen("正在同步云端最新数据...");
+    cloudBootSyncPromise = cloudInitialSync().finally(() => {
+      cloudBootSyncPromise = null;
+    });
+    try {
+      await withTimeout(cloudBootSyncPromise, CLOUD_BOOT_SYNC_TIMEOUT_MS, "启动同步超时，已显示本地缓存");
+    } catch (error) {
+      state.cloud.lastSyncError = error.message || "启动同步失败";
+      saveState();
+      showToast(state.cloud.lastSyncError);
+      cloudBootSyncPromise
+        ?.then(() => {
+          saveState();
+          if (!isEditingDataForm()) render();
+        })
+        .catch(() => {});
+    }
+  }
+  render();
+  startCloudAutoSync();
+  if (state.cloud.pendingUpload) scheduleCloudUpload();
+  cloudAutoSyncTick();
+}
+
 async function cloudAutoSyncTick() {
-  if (!isCloudConfigured() || document.hidden || cloudSyncInFlight) return;
+  if (!isCloudConfigured() || document.hidden || cloudSyncInFlight || cloudBootSyncPromise) return;
   if (state.cloud.pendingUpload) {
     await cloudUpload({ silent: true });
     return;
@@ -3621,7 +3669,4 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-render();
-startCloudAutoSync();
-if (state.cloud.pendingUpload) scheduleCloudUpload();
-setTimeout(cloudAutoSyncTick, 2000);
+bootApp();

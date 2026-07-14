@@ -59,6 +59,59 @@ button {
   margin: 0 auto;
 }
 
+.boot-sync {
+  min-height: calc(100vh - 160px);
+  width: min(100%, 420px);
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  color: var(--text);
+  text-align: center;
+}
+
+.boot-sync-mark {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: white;
+  background: var(--accent);
+  box-shadow: var(--shadow);
+  animation: syncPulse 1.2s ease-in-out infinite;
+}
+
+.boot-sync-mark svg {
+  width: 30px;
+  height: 30px;
+}
+
+.boot-sync h1 {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  letter-spacing: 0;
+}
+
+.boot-sync p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@keyframes syncPulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.88;
+  }
+  50% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
 .topbar {
   display: grid;
   grid-template-columns: 1fr auto;
