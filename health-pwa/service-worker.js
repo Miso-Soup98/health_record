@@ -1,9 +1,9 @@
-const CACHE_NAME = "health-record-pwa-v21";
+const CACHE_NAME = "health-record-pwa-v22";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=21",
-  "./app.js?v=21",
+  "./styles.css?v=22",
+  "./app.js?v=22",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",

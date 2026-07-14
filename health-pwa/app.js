@@ -283,6 +283,7 @@ function loadState() {
     foods: normalizeFoods(DEFAULT_FOODS),
     exercises: normalizeExercises(DEFAULT_EXERCISES),
     records: {},
+    deletedRecords: {},
     cloud: {
       supabaseUrl: DEFAULT_SUPABASE_URL,
       anonKey: DEFAULT_SUPABASE_ANON_KEY,
@@ -309,6 +310,7 @@ function loadState() {
       foods: Array.isArray(parsed.foods) && parsed.foods.length ? normalizeFoods(parsed.foods) : fallback.foods,
       exercises: Array.isArray(parsed.exercises) && parsed.exercises.length ? normalizeExercises(parsed.exercises) : fallback.exercises,
       records: parsed.records || {},
+      deletedRecords: parsed.deletedRecords || {},
       cloud: normalizeCloudState({ ...fallback.cloud, ...(parsed.cloud || {}) }),
     };
   } catch {
@@ -339,6 +341,11 @@ function saveState(options = {}) {
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (options.dataChanged) scheduleCloudUpload();
+}
+
+function timestampValue(value) {
+  const time = new Date(value || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
 }
 
 function normalizeCloudState(cloud = {}) {
@@ -459,6 +466,7 @@ function normalizeFood(item) {
     carb: numberValue(item.carb),
     category: String(item.category || "其他"),
     custom: Boolean(item.custom) || !DEFAULT_FOOD_KEYS.includes(item.key),
+    updatedAt: item.updatedAt || "",
   };
 }
 
@@ -478,6 +486,7 @@ function normalizeExercise(item) {
     met: numberValue(item.met, 0),
     category: String(item.category || "其他"),
     custom: Boolean(item.custom) || !DEFAULT_EXERCISE_KEYS.includes(item.key),
+    updatedAt: item.updatedAt || "",
   };
 }
 
@@ -2266,6 +2275,7 @@ function saveRecordFromForm(form) {
   const date = String(new FormData(form).get("date") || localISODate());
   const record = formToRecord(form, date);
   state.records[date] = record;
+  if (state.deletedRecords) delete state.deletedRecords[date];
   draftOverride = null;
   if (numberValue(record.weightKg, 0) > 0) {
     state.settings.currentWeightKg = numberValue(record.weightKg);
@@ -2302,14 +2312,22 @@ function scheduleExerciseTableAutosave() {
 
 function saveFoodsFromTable(options = {}) {
   const { silent = false, rerender = true } = options;
+  const now = new Date().toISOString();
   document.querySelectorAll("[data-food][data-prop]").forEach((input) => {
     const index = Number(input.dataset.food);
     const prop = input.dataset.prop;
     if (!state.foods[index]) return;
+    let nextValue;
     if (["kcal", "protein", "fat", "carb", "baseAmount"].includes(prop)) {
-      state.foods[index][prop] = numberValue(input.value, 0);
+      nextValue = numberValue(input.value, 0);
     } else if (["name", "unitLabel", "category"].includes(prop)) {
-      state.foods[index][prop] = String(input.value || "").trim();
+      nextValue = String(input.value || "").trim();
+    } else {
+      return;
+    }
+    if (state.foods[index][prop] !== nextValue) {
+      state.foods[index][prop] = nextValue;
+      state.foods[index].updatedAt = now;
     }
   });
   state.foods = normalizeFoods(state.foods).map((item) => ({
@@ -2384,6 +2402,7 @@ async function addFoodFromForm(form) {
       carb: valueOrLookup(data, "carb", lookup?.carb || 0, macrosMissing),
       category,
       custom: true,
+      updatedAt: new Date().toISOString(),
     }),
   );
   saveState({ dataChanged: true });
@@ -2409,14 +2428,22 @@ function deleteFood(index) {
 
 function saveExercisesFromTable(options = {}) {
   const { silent = false, rerender = true } = options;
+  const now = new Date().toISOString();
   document.querySelectorAll("[data-exercise][data-prop]").forEach((input) => {
     const index = Number(input.dataset.exercise);
     const prop = input.dataset.prop;
     if (!state.exercises[index]) return;
+    let nextValue;
     if (prop === "met") {
-      state.exercises[index][prop] = numberValue(input.value, 0);
+      nextValue = numberValue(input.value, 0);
     } else if (["name", "category"].includes(prop)) {
-      state.exercises[index][prop] = String(input.value || "").trim();
+      nextValue = String(input.value || "").trim();
+    } else {
+      return;
+    }
+    if (state.exercises[index][prop] !== nextValue) {
+      state.exercises[index][prop] = nextValue;
+      state.exercises[index].updatedAt = now;
     }
   });
   state.exercises = normalizeExercises(state.exercises);
@@ -2439,6 +2466,7 @@ function addExerciseFromForm(form) {
       met: numberValue(data.get("met"), 0),
       category: String(data.get("category") || "其他").trim() || "其他",
       custom: true,
+      updatedAt: new Date().toISOString(),
     }),
   );
   saveState({ dataChanged: true });
@@ -2465,6 +2493,7 @@ function deleteRecord(date = state.selectedDate) {
   const ok = window.confirm(`删除 ${formatDate(date)} 的记录？`);
   if (!ok) return;
   delete state.records[date];
+  state.deletedRecords = { ...(state.deletedRecords || {}), [date]: new Date().toISOString() };
   saveState({ dataChanged: true });
   showToast("记录已删除");
   render();
@@ -2556,6 +2585,7 @@ function exportJSON() {
       foods: state.foods,
       exercises: state.exercises,
       records: state.records,
+      deletedRecords: state.deletedRecords || {},
     },
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
@@ -2579,6 +2609,7 @@ async function importJSON(event) {
     state.foods = Array.isArray(data.foods) ? normalizeFoods(data.foods) : state.foods;
     state.exercises = Array.isArray(data.exercises) ? normalizeExercises(data.exercises) : state.exercises;
     state.records = data.records;
+    state.deletedRecords = data.deletedRecords || {};
     saveState({ dataChanged: true });
     showToast("备份已导入");
     render();
@@ -2603,12 +2634,97 @@ function cloudDataPayload() {
     foods: state.foods,
     exercises: state.exercises,
     records: state.records,
+    deletedRecords: state.deletedRecords || {},
   };
+}
+
+function cloneHealthData(data = {}) {
+  return {
+    settings: { ...(data.settings || {}) },
+    foods: Array.isArray(data.foods) ? structuredCloneSafe(data.foods) : [],
+    exercises: Array.isArray(data.exercises) ? structuredCloneSafe(data.exercises) : [],
+    records: { ...(data.records || {}) },
+    deletedRecords: { ...(data.deletedRecords || {}) },
+  };
+}
+
+function mergeRecords(localRecords = {}, remoteRecords = {}, localDeleted = {}, remoteDeleted = {}) {
+  const records = {};
+  const deletedRecords = {};
+  const dates = new Set([
+    ...Object.keys(localRecords || {}),
+    ...Object.keys(remoteRecords || {}),
+    ...Object.keys(localDeleted || {}),
+    ...Object.keys(remoteDeleted || {}),
+  ]);
+
+  dates.forEach((date) => {
+    const localRecord = localRecords?.[date];
+    const remoteRecord = remoteRecords?.[date];
+    const localRecordAt = timestampValue(localRecord?.updatedAt);
+    const remoteRecordAt = timestampValue(remoteRecord?.updatedAt);
+    const localDeletedAt = timestampValue(localDeleted?.[date]);
+    const remoteDeletedAt = timestampValue(remoteDeleted?.[date]);
+    const latest = Math.max(localRecordAt, remoteRecordAt, localDeletedAt, remoteDeletedAt);
+
+    if (!latest) {
+      const winner = remoteRecord || localRecord;
+      if (winner) records[date] = winner;
+      return;
+    }
+    if (localDeletedAt === latest || remoteDeletedAt === latest) {
+      deletedRecords[date] = new Date(latest).toISOString();
+      return;
+    }
+    const winner = localRecordAt >= remoteRecordAt ? localRecord || remoteRecord : remoteRecord || localRecord;
+    if (winner) records[date] = winner;
+  });
+
+  return { records, deletedRecords };
+}
+
+function mergeByKey(localItems = [], remoteItems = []) {
+  const merged = new Map();
+  (Array.isArray(remoteItems) ? remoteItems : []).forEach((item) => {
+    if (item?.key) merged.set(item.key, item);
+  });
+  (Array.isArray(localItems) ? localItems : []).forEach((item) => {
+    if (!item?.key) return;
+    const existing = merged.get(item.key);
+    if (!existing) {
+      merged.set(item.key, item);
+      return;
+    }
+    const localUpdatedAt = timestampValue(item.updatedAt);
+    const remoteUpdatedAt = timestampValue(existing.updatedAt);
+    if (localUpdatedAt && localUpdatedAt >= remoteUpdatedAt) {
+      merged.set(item.key, item);
+    }
+  });
+  return Array.from(merged.values());
+}
+
+function mergeHealthData(localData = {}, remoteData = {}) {
+  const local = cloneHealthData(localData);
+  const remote = cloneHealthData(remoteData);
+  const mergedRecordState = mergeRecords(local.records, remote.records, local.deletedRecords, remote.deletedRecords);
+  return {
+    settings: normalizeSettings({ ...remote.settings, ...local.settings }),
+    foods: normalizeFoods(mergeByKey(local.foods, remote.foods)),
+    exercises: normalizeExercises(mergeByKey(local.exercises, remote.exercises)),
+    records: mergedRecordState.records,
+    deletedRecords: mergedRecordState.deletedRecords,
+  };
+}
+
+function healthDataEqual(left, right) {
+  return JSON.stringify(cloneHealthData(left)) === JSON.stringify(cloneHealthData(right));
 }
 
 function hasLocalHealthData() {
   return (
     Object.keys(state.records || {}).length > 0 ||
+    Object.keys(state.deletedRecords || {}).length > 0 ||
     state.foods.some((item) => item.custom) ||
     state.exercises.some((item) => item.custom)
   );
@@ -2619,6 +2735,7 @@ function applyCloudData(data, remoteUpdatedAt = "") {
   state.foods = Array.isArray(data.foods) ? normalizeFoods(data.foods) : state.foods;
   state.exercises = Array.isArray(data.exercises) ? normalizeExercises(data.exercises) : state.exercises;
   state.records = data.records || state.records;
+  state.deletedRecords = data.deletedRecords || state.deletedRecords || {};
   state.cloud.pendingUpload = false;
   state.cloud.lastSyncAt = new Date().toISOString();
   state.cloud.lastRemoteUpdatedAt = remoteUpdatedAt || state.cloud.lastSyncAt;
@@ -2667,7 +2784,11 @@ async function cloudAutoSyncTick() {
       saveState();
       return;
     }
-    applyCloudData(row.data, remoteUpdatedAt);
+    const merged = mergeHealthData(cloudDataPayload(), row.data);
+    if (!healthDataEqual(merged, row.data)) {
+      await upsertCloudData(merged);
+    }
+    applyCloudData(merged, remoteUpdatedAt);
     saveState();
     render();
   } catch (error) {
@@ -2680,6 +2801,19 @@ async function fetchCloudRow() {
   if (!state.cloud.userId) return null;
   const rows = await cloudFetch(`/rest/v1/health_app_state?select=data,updated_at&user_id=eq.${encodeURIComponent(state.cloud.userId)}`);
   return rows?.[0] || null;
+}
+
+async function upsertCloudData(data, updatedAt = new Date().toISOString()) {
+  await cloudFetch("/rest/v1/health_app_state?on_conflict=user_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({
+      user_id: state.cloud.userId,
+      data,
+      updated_at: updatedAt,
+    }),
+  });
+  return updatedAt;
 }
 
 function getCloudFormValues() {
@@ -2792,13 +2926,12 @@ async function cloudInitialSync() {
     if (hasLocalHealthData()) await cloudUpload({ silent: true });
     return;
   }
-  const remoteUpdatedAt = row.updated_at || "";
-  const localChangedAt = state.cloud.lastLocalChangeAt || "";
-  if (state.cloud.pendingUpload && localChangedAt && (!remoteUpdatedAt || new Date(localChangedAt) >= new Date(remoteUpdatedAt))) {
-    await cloudUpload({ silent: true });
-    return;
+  const merged = mergeHealthData(cloudDataPayload(), row.data);
+  let updatedAt = row.updated_at || "";
+  if (!healthDataEqual(merged, row.data)) {
+    updatedAt = await upsertCloudData(merged);
   }
-  applyCloudData(row.data, remoteUpdatedAt);
+  applyCloudData(merged, updatedAt);
   saveState();
 }
 
@@ -2808,23 +2941,13 @@ async function cloudUpload(options = {}) {
     if (!state.cloud.accessToken || !state.cloud.userId) throw new Error("请先登录云同步");
     if (cloudSyncInFlight) return;
     cloudSyncInFlight = true;
-    const now = new Date().toISOString();
-    await cloudFetch("/rest/v1/health_app_state?on_conflict=user_id", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates" },
-      body: JSON.stringify({
-        user_id: state.cloud.userId,
-        data: cloudDataPayload(),
-        updated_at: now,
-      }),
-    });
-    state.cloud.lastSyncAt = now;
-    state.cloud.lastRemoteUpdatedAt = now;
-    state.cloud.pendingUpload = false;
-    state.cloud.lastSyncError = "";
+    const row = await fetchCloudRow();
+    const merged = row?.data ? mergeHealthData(cloudDataPayload(), row.data) : cloudDataPayload();
+    const now = await upsertCloudData(merged);
+    applyCloudData(merged, now);
     saveState();
     if (!silent) {
-      showToast("已上传到 Supabase");
+      showToast("已合并同步到 Supabase");
       render();
     }
   } catch (error) {
@@ -2844,9 +2967,14 @@ async function cloudPull(options = {}) {
     cloudSyncInFlight = true;
     const row = await fetchCloudRow();
     if (!row?.data) throw new Error("云端暂无数据，可先上传一次");
-    applyCloudData(row.data, row.updated_at || "");
+    const merged = mergeHealthData(cloudDataPayload(), row.data);
+    let updatedAt = row.updated_at || "";
+    if (!healthDataEqual(merged, row.data)) {
+      updatedAt = await upsertCloudData(merged);
+    }
+    applyCloudData(merged, updatedAt);
     saveState();
-    if (!silent) showToast("已从 Supabase 拉取");
+    if (!silent) showToast("已合并云端数据");
     render();
   } catch (error) {
     state.cloud.lastSyncError = error.message || "拉取失败";
