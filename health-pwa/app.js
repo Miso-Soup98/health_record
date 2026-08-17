@@ -4,6 +4,7 @@ const STORAGE_KEY = "health-record-pwa.v1";
 const CLOUD_UPLOAD_DEBOUNCE_MS = 800;
 const CLOUD_AUTO_PULL_INTERVAL_MS = 15000;
 const CLOUD_BOOT_SYNC_TIMEOUT_MS = 10000;
+const LONG_WEIGHT_TREND_MIN_POINTS = 7;
 const DEFAULT_SUPABASE_URL = "https://mrllowcogcsgbsvxgshx.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_wOFcTdR2NroXxOOpkbYLzA_2I3-pGN6";
 const DEFAULT_SETTINGS = {
@@ -263,6 +264,7 @@ let foodLookupState = {
 const foodLookupCache = new Map();
 const chartLayouts = {};
 const chartHoverState = {};
+let longWeightTrendState = { span: null, start: null };
 let chartFrame = null;
 let cloudUploadTimer = null;
 let cloudAutoSyncTimer = null;
@@ -437,6 +439,11 @@ function formatSyncTime(iso) {
 function numberValue(value, fallback = 0) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function clamp(value, min, max) {
+  if (max < min) return min;
+  return Math.min(max, Math.max(min, value));
 }
 
 function inferFoodUnit(unit) {
@@ -948,6 +955,8 @@ function renderDashboardScreen() {
         </div>
       </section>
 
+      ${renderLongWeightTrendPanel()}
+
       <section class="grid two">
         <div class="panel">
           <div class="panel-header">
@@ -987,6 +996,71 @@ function renderDashboardScreen() {
         </div>
       </section>
     </main>
+  `;
+}
+
+function weightRecordsAsc() {
+  return sortedRecords("asc").filter((record) => numberValue(record.weightKg, 0) > 0);
+}
+
+function longWeightTrendWindow(records = weightRecordsAsc()) {
+  const total = records.length;
+  if (!total) return { total: 0, minSpan: 0, span: 0, start: 0, end: 0, maxStart: 0, records: [] };
+  const minSpan = Math.min(LONG_WEIGHT_TREND_MIN_POINTS, total);
+  const requestedSpan = longWeightTrendState.span == null ? total : Math.round(longWeightTrendState.span);
+  const span = clamp(requestedSpan, minSpan, total);
+  const maxStart = Math.max(0, total - span);
+  const start = span === total ? 0 : clamp(Math.round(longWeightTrendState.start ?? maxStart), 0, maxStart);
+  return {
+    total,
+    minSpan,
+    span,
+    start,
+    end: start + span,
+    maxStart,
+    records: records.slice(start, start + span),
+  };
+}
+
+function renderLongWeightTrendPanel() {
+  const records = weightRecordsAsc();
+  const view = longWeightTrendWindow(records);
+  const firstDate = records[0]?.date;
+  const lastDate = records.at(-1)?.date;
+  const rangeText = records.length
+    ? `${formatDate(firstDate)} - ${formatDate(lastDate)} · ${records.length} 个体重点`
+    : "暂无体重记录";
+  const viewText = view.records.length
+    ? `${formatDate(view.records[0].date)} - ${formatDate(view.records.at(-1).date)}`
+    : "-";
+  const controlsDisabled = records.length <= 1 ? "disabled" : "";
+  return `
+    <section class="panel long-trend-panel">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">全程体重趋势</h2>
+          <p class="panel-subtitle">${rangeText}</p>
+        </div>
+        <div class="trend-presets" aria-label="体重趋势范围">
+          <button type="button" class="ghost-button" data-weight-trend-preset="all" ${controlsDisabled}>全部</button>
+          <button type="button" class="ghost-button" data-weight-trend-preset="90" ${controlsDisabled}>近90点</button>
+          <button type="button" class="ghost-button" data-weight-trend-preset="30" ${controlsDisabled}>近30点</button>
+        </div>
+      </div>
+      <div class="trend-controls">
+        <label class="trend-control" for="weightTrendSpan">
+          <span>窗口</span>
+          <input id="weightTrendSpan" type="range" min="${view.minSpan || 1}" max="${view.total || 1}" value="${view.span || 1}" ${controlsDisabled} />
+          <strong id="weightTrendSpanLabel">${view.span || 0} 点</strong>
+        </label>
+        <label class="trend-control" for="weightTrendStart">
+          <span>位置</span>
+          <input id="weightTrendStart" type="range" min="0" max="${view.maxStart || 0}" value="${view.start || 0}" ${view.maxStart ? "" : "disabled"} />
+          <strong id="weightTrendRangeLabel">${escapeHTML(viewText)}</strong>
+        </label>
+      </div>
+      <div class="chart-wrap long-chart-wrap"><canvas id="longWeightChart" aria-label="全程体重趋势"></canvas></div>
+    </section>
   `;
 }
 
@@ -2144,6 +2218,7 @@ function bindCurrentScreen() {
   });
 
   bindChartHoverHandlers();
+  bindLongWeightTrendControls();
 
   const dateInput = document.getElementById("date");
   if (dateInput) {
@@ -3037,6 +3112,7 @@ function drawCharts() {
   if (state.activeTab !== "dashboard") return;
   drawEnergyChart();
   drawWeightChart();
+  drawLongWeightChart();
   drawMacroChart();
 }
 
@@ -3049,7 +3125,7 @@ function scheduleDrawCharts() {
 }
 
 function bindChartHoverHandlers() {
-  ["energyChart", "weightChart"].forEach((id) => {
+  ["energyChart", "weightChart", "longWeightChart"].forEach((id) => {
     const canvas = document.getElementById(id);
     if (!canvas) return;
     canvas.addEventListener("pointermove", (event) => updateChartHover(id, event));
@@ -3062,6 +3138,68 @@ function bindChartHoverHandlers() {
     macroCanvas.addEventListener("pointerdown", updateMacroHover);
     macroCanvas.addEventListener("pointerleave", () => clearChartHover("macroChart"));
   }
+}
+
+function bindLongWeightTrendControls() {
+  const spanInput = document.getElementById("weightTrendSpan");
+  const startInput = document.getElementById("weightTrendStart");
+  const presets = document.querySelectorAll("[data-weight-trend-preset]");
+  if (!spanInput || !startInput) return;
+
+  spanInput.addEventListener("input", () => {
+    const records = weightRecordsAsc();
+    const current = longWeightTrendWindow(records);
+    const nextSpan = clamp(Math.round(numberValue(spanInput.value, current.span)), current.minSpan, current.total);
+    const maxStart = Math.max(0, current.total - nextSpan);
+    longWeightTrendState = {
+      span: nextSpan,
+      start: clamp(current.start + current.span - nextSpan, 0, maxStart),
+    };
+    syncLongWeightTrendControls();
+    drawLongWeightChart();
+  });
+
+  startInput.addEventListener("input", () => {
+    const current = longWeightTrendWindow();
+    longWeightTrendState = {
+      span: current.span,
+      start: clamp(Math.round(numberValue(startInput.value, current.start)), 0, current.maxStart),
+    };
+    syncLongWeightTrendControls();
+    drawLongWeightChart();
+  });
+
+  presets.forEach((button) => {
+    button.addEventListener("click", () => {
+      const records = weightRecordsAsc();
+      const total = records.length;
+      if (!total) return;
+      const preset = button.dataset.weightTrendPreset;
+      const span = preset === "all" ? total : clamp(Number(preset), Math.min(LONG_WEIGHT_TREND_MIN_POINTS, total), total);
+      longWeightTrendState = { span: preset === "all" ? null : span, start: Math.max(0, total - span) };
+      syncLongWeightTrendControls();
+      drawLongWeightChart();
+    });
+  });
+}
+
+function syncLongWeightTrendControls() {
+  const spanInput = document.getElementById("weightTrendSpan");
+  const startInput = document.getElementById("weightTrendStart");
+  const spanLabel = document.getElementById("weightTrendSpanLabel");
+  const rangeLabel = document.getElementById("weightTrendRangeLabel");
+  if (!spanInput || !startInput || !spanLabel || !rangeLabel) return;
+  const view = longWeightTrendWindow();
+  spanInput.min = String(view.minSpan || 1);
+  spanInput.max = String(view.total || 1);
+  spanInput.value = String(view.span || 1);
+  startInput.max = String(view.maxStart || 0);
+  startInput.value = String(view.start || 0);
+  startInput.disabled = view.maxStart <= 0;
+  spanLabel.textContent = `${view.span || 0} 点`;
+  rangeLabel.textContent = view.records.length
+    ? `${formatDate(view.records[0].date)} - ${formatDate(view.records.at(-1).date)}`
+    : "-";
 }
 
 function pointerPositionInCanvas(canvas, event) {
@@ -3202,6 +3340,28 @@ function drawWeightChart() {
   ], chartHoverState.weightChart);
 }
 
+function drawLongWeightChart() {
+  const setup = setupCanvas("longWeightChart");
+  if (!setup) return;
+  const { ctx, width, height } = setup;
+  const records = weightRecordsAsc();
+  if (!records.length) {
+    delete chartLayouts.longWeightChart;
+    return drawEmpty(ctx, width, height, "暂无体重记录");
+  }
+  const view = longWeightTrendWindow(records);
+  const labels = view.records.map((record) => record.date);
+  const weights = view.records.map((record) => numberValue(record.weightKg));
+  const rolling = view.records.map((record) => {
+    const nearby = dateRangeRecords(record.date, 7).map((item) => numberValue(item.weightKg, NaN));
+    return average(nearby);
+  });
+  chartLayouts.longWeightChart = drawMultiLine(ctx, width, height, labels, [
+    { label: "体重", color: "#4f67b1", values: weights, unit: "kg", digits: 1, axisDigits: 1 },
+    { label: "7日均重", color: "#2f7d62", values: rolling, unit: "kg", digits: 1, axisDigits: 1 },
+  ], chartHoverState.longWeightChart);
+}
+
 function drawMacroChart() {
   const setup = setupCanvas("macroChart");
   if (!setup) return;
@@ -3297,10 +3457,12 @@ function drawMultiLine(ctx, width, height, labels, series, hover = null) {
   });
 
   ctx.fillStyle = "#657267";
+  ctx.textAlign = "center";
   labels.forEach((label, index) => {
     if (index % Math.ceil(labels.length / 5) !== 0 && index !== labels.length - 1) return;
-    ctx.fillText(label, xFor(index) - 14, height - 16);
+    ctx.fillText(chartAxisLabel(label), xFor(index), height - 16);
   });
+  ctx.textAlign = "left";
 
   let legendX = pad.left;
   series.forEach((item) => {
@@ -3313,6 +3475,12 @@ function drawMultiLine(ctx, width, height, labels, series, hover = null) {
 
   if (hover) drawLineHover(ctx, width, height, labels, series, points, hover, pad);
   return { points, pad, plotW, plotH };
+}
+
+function chartAxisLabel(label) {
+  const text = String(label || "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text.slice(5).replace("-", "/");
+  return text;
 }
 
 function drawLineHover(ctx, width, height, labels, series, points, hover, pad) {

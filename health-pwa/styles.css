@@ -648,6 +648,55 @@ button {
   touch-action: pan-y;
 }
 
+.long-trend-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.trend-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.trend-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.trend-control {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) minmax(64px, auto);
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.trend-control strong {
+  color: var(--text);
+  font-size: 0.84rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.trend-control input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.long-chart-wrap,
+.long-chart-wrap canvas {
+  min-height: 340px;
+  height: 340px;
+}
+
 .history-list {
   display: grid;
   gap: 10px;
@@ -1046,5 +1095,28 @@ button {
   .chart-wrap canvas {
     min-height: 230px;
     height: 230px;
+  }
+
+  .trend-presets {
+    justify-content: flex-start;
+  }
+
+  .trend-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .trend-control {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .trend-control strong {
+    text-align: left;
+  }
+
+  .long-chart-wrap,
+  .long-chart-wrap canvas {
+    min-height: 280px;
+    height: 280px;
   }
 }
