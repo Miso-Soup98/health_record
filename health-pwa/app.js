@@ -3131,6 +3131,9 @@ function bindChartHoverHandlers() {
     canvas.addEventListener("pointermove", (event) => updateChartHover(id, event));
     canvas.addEventListener("pointerdown", (event) => updateChartHover(id, event));
     canvas.addEventListener("pointerleave", () => clearChartHover(id));
+    if (id === "longWeightChart") {
+      canvas.addEventListener("wheel", updateLongWeightTrendWheel, { passive: false });
+    }
   });
   const macroCanvas = document.getElementById("macroChart");
   if (macroCanvas) {
@@ -3200,6 +3203,51 @@ function syncLongWeightTrendControls() {
   rangeLabel.textContent = view.records.length
     ? `${formatDate(view.records[0].date)} - ${formatDate(view.records.at(-1).date)}`
     : "-";
+}
+
+function updateLongWeightTrendWheel(event) {
+  const records = weightRecordsAsc();
+  if (records.length <= 1) return;
+  const current = longWeightTrendWindow(records);
+  if (!current.total) return;
+  event.preventDefault();
+
+  const horizontalDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  const shouldPan = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+  if (shouldPan) {
+    if (!current.maxStart) return;
+    const step = Math.max(1, Math.round(Math.abs(horizontalDelta) / 80));
+    const direction = horizontalDelta > 0 ? 1 : -1;
+    longWeightTrendState = {
+      span: current.span,
+      start: clamp(current.start + direction * step, 0, current.maxStart),
+    };
+    syncLongWeightTrendControls();
+    drawLongWeightChart();
+    return;
+  }
+
+  const layout = chartLayouts.longWeightChart;
+  const pointer = pointerPositionInCanvas(event.currentTarget, event);
+  const anchorRatio = layout
+    ? clamp((pointer.x - layout.pad.left) / layout.plotW, 0, 1)
+    : 0.5;
+  const delta = event.deltaY || event.deltaX;
+  const zoomPower = clamp(Math.abs(delta) / 100, 0.35, 3);
+  const zoomFactor = Math.pow(1.18, zoomPower);
+  const rawSpan = delta > 0 ? current.span * zoomFactor : current.span / zoomFactor;
+  const nextSpan = clamp(Math.round(rawSpan), current.minSpan, current.total);
+  if (nextSpan === current.span) return;
+
+  const anchorIndex = current.start + anchorRatio * Math.max(1, current.span - 1);
+  const maxStart = Math.max(0, current.total - nextSpan);
+  const nextStart = clamp(Math.round(anchorIndex - anchorRatio * Math.max(1, nextSpan - 1)), 0, maxStart);
+  longWeightTrendState = {
+    span: nextSpan === current.total ? null : nextSpan,
+    start: nextStart,
+  };
+  syncLongWeightTrendControls();
+  drawLongWeightChart();
 }
 
 function pointerPositionInCanvas(canvas, event) {
